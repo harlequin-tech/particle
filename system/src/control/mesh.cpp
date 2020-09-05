@@ -396,6 +396,20 @@ int auth(ctrl_request* req) {
     if (memcmp(pskc, curPskc->m8, OT_PSKC_MAX_SIZE) != 0) {
         return SYSTEM_ERROR_NOT_ALLOWED;
     }
+
+    // XXX debug
+    LOG(INFO, "%s.%u: auth()");
+    LOG(INFO, "Network name: %s", name);
+    LOG(INFO, "Network password: %s", dPwd.data);
+    LOG(INFO, "802.15.4 channel: %d", (int)otLinkGetChannel(thread));
+    LOG(INFO, "802.15.4 PAN ID: 0x%04x", (unsigned)otLinkGetPanId(thread));
+    do {
+	char buf[sizeof(extPanId->m8)*2 + 1];
+	for (size_t ind=0; ind<sizeof(buf)/2; ind++) {
+	    sprintf(&buf[ind*2], "%02x", extPanId->m8[ind]);
+	}
+	LOG(INFO, "802.15.4 Extended PAN ID: 0x%s", buf);
+    } while (0);
     return 0;
 }
 
@@ -592,6 +606,7 @@ int startCommissioner(ctrl_request* req) {
     } else {
         if (state == OT_COMMISSIONER_STATE_DISABLED) {
             LOG_DEBUG(TRACE, "Starting commissioner");
+            LOG(INFO, "XXX Starting commissioner"); // XXX debug
             // FIXME: use callback to track state changes
             CHECK_THREAD(otCommissionerStart(thread, nullptr, nullptr, nullptr));
         }
@@ -660,6 +675,14 @@ int prepareJoiner(ctrl_request* req) {
     rand.genBase32Thread(g_joinPwd, JOINER_PASSWORD_MAX_SIZE);
     LOG_DEBUG(TRACE, "Joiner initialized: PAN ID: 0x%04x, EUI-64: %s, password: %s", (unsigned)pbReq.network.pan_id,
             eui64Str, g_joinPwd);
+    LOG(INFO, "Joiner initialized: PAN ID: 0x%04x, EUI-64: %s, password: %s", (unsigned)pbReq.network.pan_id, eui64Str, g_joinPwd); // XXX debug
+    do {
+	_LOG_ATTR_INIT(_attr); \
+	log_message(LOG_LEVEL_INFO, LOG_THIS_CATEGORY(), &_attr, NULL, 
+		"XXX Joiner initialized: PAN ID: 0x%04x, EUI-64: %s, password: %s",
+		(unsigned)pbReq.network.pan_id, eui64Str, g_joinPwd); // XXX debug
+    } while (0);
+
     memcpy(g_joinNetworkId, dNetworkId.data, dNetworkId.size);
     g_joinNetworkId[dNetworkId.size] = '\0';
     // Encode a reply
@@ -699,6 +722,7 @@ int addJoiner(ctrl_request* req) {
         timeout = pbReq.timeout;
     }
     LOG_DEBUG(TRACE, "Adding joiner: EUI-64: %s, password: %s", dEui64Str.data, dJoinPwd.data);
+    LOG(INFO, "XXX Adding joiner: EUI-64: %s, password: %s", dEui64Str.data, dJoinPwd.data); // XXX debug
     CHECK_THREAD(otCommissionerAddJoiner(thread, &eui64, dJoinPwd.data, timeout));
     startCommissionerTimer();
     return 0;
@@ -736,6 +760,7 @@ int joinNetwork(ctrl_request* req) {
         return SYSTEM_ERROR_INVALID_STATE;
     }
     // Parse request
+    //particle_ctrl_mesh_JoinNetworkRequest pbReq = {};
     PB(JoinNetworkRequest) pbReq = {};
     int ret = decodeRequestMessage(req, PB(JoinNetworkRequest_fields), &pbReq);
     if (ret != 0) {
@@ -751,6 +776,7 @@ int joinNetwork(ctrl_request* req) {
         volatile bool done;
     };
     LOG(INFO, "Joining the network; timeout: %u", timeout);
+    LOG(INFO, "XXX join password: \"%s\"", g_joinPwd);
     JoinStatus stat = {};
     bool cancel = false;
     const auto t1 = HAL_Timer_Get_Milli_Seconds();

@@ -134,7 +134,8 @@ int ot_init(int (*onInit)(otInstance*), void* reserved) {
     LOG(INFO, "Max transmit power: %d", (int)transmitPower);
 
     if (otDatasetIsCommissioned(thread)) {
-        LOG(INFO, "Network name: %s", otThreadGetNetworkName(thread));
+        LOG(INFO, "Network name: %s (XXX.1)", otThreadGetNetworkName(thread));	// XXX debug
+        //LOG(INFO, "Network name: %s", otThreadGetNetworkName(thread));
         LOG(INFO, "802.15.4 channel: %d", (int)otLinkGetChannel(thread));
         LOG(INFO, "802.15.4 PAN ID: 0x%04x", (unsigned)otLinkGetPanId(thread));
     }

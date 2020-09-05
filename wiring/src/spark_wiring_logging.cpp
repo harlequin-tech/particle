@@ -624,7 +624,7 @@ Print* spark::DefaultOutputStreamFactory::createStream(const char *type, const J
     }
 #if Wiring_USBSerial1
     if (strcmp(type, "USBSerial1") == 0) {
-        USBSerial1.begin();
+        USBSerial1.begin(115200);
         return &USBSerial1;
     }
 #endif

@@ -1034,6 +1034,7 @@ size_t BleControlRequestChannel::readSome(char* data, size_t size) {
 }
 
 int BleControlRequestChannel::connected(const hal_ble_link_evt_t& event) {
+    DEBUG("BleControlRequestChannel::connected()");
     curConnHandle_ = event.conn_handle;
     maxPacketSize_ = BLE_MIN_ATTR_VALUE_PACKET_SIZE;
     subscribed_ = false;
@@ -1045,6 +1046,7 @@ int BleControlRequestChannel::connected(const hal_ble_link_evt_t& event) {
 }
 
 int BleControlRequestChannel::disconnected(const hal_ble_link_evt_t& event) {
+    DEBUG("BleControlRequestChannel::disconnected()");
     if (event.conn_handle == curConnHandle_) {
         // Free queued buffers
         while (Buffer* buf = inBufs_.popFront()) {
@@ -1294,14 +1296,17 @@ void BleControlRequestChannel::onBleLinkEvents(const hal_ble_link_evt_t* event, 
     int ret = 0;
     switch (event->type) {
         case BLE_EVT_CONNECTED: {
+	    DEBUG("BLE_EVT_CONNECTED");
             ret = ch->connected(*event);
             break;
         }
         case BLE_EVT_DISCONNECTED: {
+	    DEBUG("BLE_EVT_DISCONNECTED");
             ret = ch->disconnected(*event);
             break;
         }
         case BLE_EVT_ATT_MTU_UPDATED: {
+	    DEBUG("BLE_EVT_ATT_MTU_UPDATED");
             ret = ch->gattParamChanged(*event);
             break;
         }

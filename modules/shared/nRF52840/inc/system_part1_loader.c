@@ -33,6 +33,13 @@ void system_part1_pre_init() {
     if (!bootloader_validated || !is_user_module_valid() || safe_mode) {
         // indicate to the system that it shouldn't run user code
         set_system_mode(SAFE_MODE);
+        if (!bootloader_validated) {
+            set_system_mode_reason("Bootload invalid");
+        } else if (!is_user_module_valid()) {
+            set_system_mode_reason("User module invalid");
+        } else {
+            set_system_mode_reason("Safe mode requested");
+        }
     }
 }
 

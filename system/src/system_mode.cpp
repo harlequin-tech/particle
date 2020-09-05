@@ -105,3 +105,22 @@ spark::feature::State system_thread_get_state(void*)
 }
 
 #endif
+
+/*
+ * DEBUG
+ */
+
+uint32_t dnh_reasonCount = 0;
+const char *dnh_lastReason = NULL;
+void set_system_mode_reason(const char *reason)
+{
+    dnh_lastReason = reason;
+    dnh_reasonCount++;
+}
+
+const char *get_system_mode_reason(uint32_t *setCount)
+{
+    *setCount = dnh_reasonCount;
+    return dnh_lastReason;
+}
+

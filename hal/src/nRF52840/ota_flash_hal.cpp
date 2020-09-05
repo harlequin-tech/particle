@@ -249,6 +249,9 @@ bool validate_module_dependencies_full(const module_info_t* module, const module
     return valid;
 }
 
+const char *dnh_validate_fail_reason = "None";
+char dnh_buf[128];
+
 bool validate_module_dependencies(const module_bounds_t* bounds, bool userOptional, bool fullDeps)
 {
     bool valid = false;
@@ -265,6 +268,10 @@ bool validate_module_dependencies(const module_bounds_t* bounds, bool userOption
                 const module_bounds_t* dependency_bounds = find_module_bounds(module->dependency.module_function, module->dependency.module_index, module_mcu_target(module));
                 const module_info_t* dependency = locate_module(dependency_bounds);
                 valid = dependency && (dependency->module_version>=module->dependency.module_version);
+		if (!valid) {
+		    snprintf(dnh_buf, sizeof dnh_buf, "Version 1 mismatch %u < %u", dependency->module_version, module->dependency.module_version);
+		    dnh_validate_fail_reason = dnh_buf;
+		}
             } else {
                 valid = true;
             }
@@ -276,6 +283,11 @@ bool validate_module_dependencies(const module_bounds_t* bounds, bool userOption
                 const module_bounds_t* dependency_bounds = find_module_bounds(module->dependency2.module_function, module->dependency2.module_index, module_mcu_target(module));
                 const module_info_t* dependency = locate_module(dependency_bounds);
                 valid = valid && dependency && (dependency->module_version>=module->dependency2.module_version);
+		if (!valid) {
+		    snprintf(dnh_buf, sizeof dnh_buf, "Version 2 mismatch %u < %u", dependency->module_version, module->dependency2.module_version);
+		    dnh_validate_fail_reason = dnh_buf;
+		    valid = true;		// XXX HACK!
+		}
             }
         }
 

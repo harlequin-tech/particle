@@ -21,6 +21,7 @@ LOG_SOURCE_CATEGORY("net.th")
 #include "openthread-core-config.h"
 #include "lwip_openthreadif.h"
 #include <openthread/instance.h>
+#include <openthread/thread_ftd.h>
 #include <lwip/netifapi.h>
 #include <lwip/tcpip.h>
 #include <lwip/pbuf.h>
@@ -40,6 +41,8 @@ LOG_SOURCE_CATEGORY("net.th")
 #include "hal_platform.h"
 
 #include "random.h"
+
+#include "bytes2hexbuf.h"
 
 // FIXME:
 #include "system_threading.h"
@@ -753,6 +756,9 @@ otInstance* OpenThreadNetif::getOtInstance() {
     return ot_;
 }
 
+void Spark_Dump_Config(void);
+void Spark_HandshakeDump(void);
+
 int OpenThreadNetif::up() {
     ot::ThreadLock lk;
 
@@ -765,6 +771,48 @@ int OpenThreadNetif::up() {
     LOG(INFO, "Network name: %s", otThreadGetNetworkName(ot_));
     LOG(INFO, "802.15.4 channel: %d", (int)otLinkGetChannel(ot_));
     LOG(INFO, "802.15.4 PAN ID: 0x%04x", (unsigned)otLinkGetPanId(ot_));
+
+
+    otExtAddress eui64 = {}; // OT_EXT_ADDRESS_SIZE
+    otLinkGetFactoryAssignedIeeeEui64(ot_, &eui64);
+    char eui64Str[sizeof(eui64) * 2 + 1] = {}; // +1 character for term. null
+    bytes2hexbuf_lower_case((const uint8_t*)&eui64, sizeof(eui64), eui64Str);
+    LOG(INFO, "factory Eui64: %s", eui64Str);
+
+#if 0
+        char extPanIdStr[sizeof(extPanId) * 2 + 1] = {};
+        bytes2hexbuf_lower_case((const uint8_t*)&extPanId, sizeof(extPanId), extPanIdStr);
+        LOG_DEBUG(TRACE, "Name: %s; PAN ID: 0x%04x; Extended PAN ID: 0x%s", (const char*)&result->mNetworkName,
+                (unsigned)panId, extPanIdStr);
+#endif
+    /*
+     * XXX debug
+     */
+    Spark_Dump_Config();
+    Spark_HandshakeDump();
+    do {
+	const otMasterKey *key = otThreadGetMasterKey(ot_);
+	char buf[sizeof(key->m8)*2 + 1];
+	for (size_t ind=0; ind<sizeof(key->m8); ind++) {
+	    sprintf(&buf[ind*2], "%02x", key->m8[ind]);
+	}
+	LOG(INFO, "XXX Network master key: [%u:%u] %s", sizeof(key->m8), OT_MASTER_KEY_SIZE, buf);
+	LOG(INFO, "XXX Network master key: [%u:%u] %s", sizeof(key->m8), OT_MASTER_KEY_SIZE, buf);
+    } while (0);
+
+#if 1
+    do {
+	const otPSKc *key = otThreadGetPSKc(ot_);
+	char buf[sizeof(key->m8)*2 + 1];
+	size_t ind;
+	for (ind=0; ind<sizeof(key->m8); ind++) {
+	    sprintf(&buf[ind*2], "%02x", key->m8[ind]);
+	}
+	LOG(INFO, "XXX OT PSK: %s (ind=%u)", buf, ind);
+	LOG(INFO, "XXX OT PSK: %s (ind=%u)", buf, ind);
+    } while (0);
+#endif
+
     int r = 0;
     if ((r = otIp6SetEnabled(ot_, true)) != OT_ERROR_NONE) {
         return r;

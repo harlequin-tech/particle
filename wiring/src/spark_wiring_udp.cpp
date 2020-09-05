@@ -82,6 +82,7 @@ uint8_t UDP::begin(uint16_t port, network_interface_t nif)
     bool bound = 0;
     if(Network.from(nif).ready())
     {
+       //_sock = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP, port, 0);
        _sock = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP, port, nif);
         DEBUG("socket=%d",_sock);
         if (socket_handle_valid(_sock))

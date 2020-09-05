@@ -33,6 +33,9 @@ typedef enum
 void set_system_mode(System_Mode_TypeDef mode);
 System_Mode_TypeDef system_mode();
 
+void set_system_mode_reason(const char *reason);
+const char *get_system_mode_reason(uint32_t *setCount);
+
 namespace spark {
     namespace feature {
         enum State {

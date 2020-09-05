@@ -48,6 +48,9 @@ const module_info_t* locate_module(const module_bounds_t* bounds) {
     return FLASH_ModuleInfo(FLASH_INTERNAL, bounds->start_address);
 }
 
+const char *ota_module_fail = "None";
+const char *ota_module_pass = "None";
+
 /**
  * Fetches and validates the module info found at a given location.
  * @param target        Receives the module into
@@ -62,21 +65,31 @@ bool fetch_module(hal_module_t* target, const module_bounds_t* bounds, bool user
     target->bounds = *bounds;
     if (NULL!=(target->info = locate_module(bounds)))
     {
+	ota_module_pass = "Located module";
         target->validity_checked = MODULE_VALIDATION_RANGE | MODULE_VALIDATION_DEPENDENCIES | MODULE_VALIDATION_PLATFORM | check_flags;
         target->validity_result = 0;
         const uint8_t* module_end = (const uint8_t*)target->info->module_end_address;
         // find the location of where the module should be flashed to based on its module co-ordinates (function/index/mcu)
         const module_bounds_t* expected_bounds = find_module_bounds(module_function(target->info), module_index(target->info), module_mcu_target(target->info));
         if (expected_bounds && in_range(uint32_t(module_end), expected_bounds->start_address, expected_bounds->end_address)) {
+	    ota_module_pass = "Bounds ok";
             target->validity_result |= MODULE_VALIDATION_RANGE;
             target->validity_result |= (PLATFORM_ID==module_platform_id(target->info)) ? MODULE_VALIDATION_PLATFORM : 0;
             // the suffix ends at module_end, and the crc starts after module end
             target->crc = (module_info_crc_t*)module_end;
             target->suffix = (module_info_suffix_t*)(module_end-sizeof(module_info_suffix_t));
-            if (validate_module_dependencies(bounds, userDepsOptional, target->validity_checked & MODULE_VALIDATION_DEPENDENCIES_FULL))
+            if (validate_module_dependencies(bounds, userDepsOptional, target->validity_checked & MODULE_VALIDATION_DEPENDENCIES_FULL)) {
                 target->validity_result |= MODULE_VALIDATION_DEPENDENCIES | (target->validity_checked & MODULE_VALIDATION_DEPENDENCIES_FULL);
-            if ((target->validity_checked & MODULE_VALIDATION_INTEGRITY) && FLASH_VerifyCRC32(FLASH_INTERNAL, bounds->start_address, module_length(target->info)))
+		ota_module_pass = "Dependencies ok";
+	    } else {
+		ota_module_fail = "Dependencies failed";
+	    }
+            if ((target->validity_checked & MODULE_VALIDATION_INTEGRITY) && FLASH_VerifyCRC32(FLASH_INTERNAL, bounds->start_address, module_length(target->info))) {
                 target->validity_result |= MODULE_VALIDATION_INTEGRITY;
+		ota_module_pass = "Integrity ok";
+	    } else {
+		ota_module_fail = "Integrity failed";
+	    }
         }
         else
             target->info = NULL;

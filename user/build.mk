@@ -12,6 +12,7 @@ MODULE_LIBSV2+=$(call remove_slash,$(APPLIBSV2))
 
 ifdef APP
 USER_MAKEFILE ?= $(APP).mk
+#APPDIR ?= ../user/
 # when TARGET_FILE is defined on the command line,
 endif
 
@@ -21,6 +22,10 @@ ifdef APPDIR
 # if TARGET_FILE_NAME is not defined, defaults to the name of the $(APPDIR)
 SOURCE_PATH = $(call remove_slash,$(APPDIR))
 endif
+
+$(info XXX APPDIR      "$(APPDIR)")
+$(info XXX SOURCE_PATH "$(SOURCE_PATH)")
+$(info XXX USRSRC      "$(USRSRC)")
 
 ifdef TEST
 INCLUDE_PLATFORM?=1
@@ -33,6 +38,7 @@ endif
 endif
 
 # the root of the application
+#APPROOT := $(SOURCE_PATH)/$(USRSRC)
 APPROOT := $(SOURCE_PATH)$(USRSRC)
 
 ifneq ($(wildcard $(APPROOT)/project.properties),)
@@ -44,12 +50,17 @@ ifneq ($(wildcard $(APPROOT)/project.properties),)
 else
    APPLAYOUT=legacy
 endif
+$(info XXX APPROOT   $(APPROOT))
+$(info XXX APPLAYOUT $(APPLAYOUT))
+#APPLAYOUT=extended
 
 ifeq ($(APPLAYOUT),extended)
+$(info XXX APPLAYOUT = extended)
 # add vendored libraries to module libraries
 MODULE_LIBSV2 += $(wildcard $(APPROOT)/lib/*)
 SOURCE_PATH := $(APPROOT)/
 USRSRC = src
+$(info XXX MODULE_LIBSV2 = $(MODULE_LIBSV2))
 endif
 
 USRSRC_SLASH = $(and $(USRSRC),$(USRSRC)/)

@@ -700,6 +700,11 @@ RunTimeInfoDiagnosticData g_usedRamDiagData(DIAG_ID_SYSTEM_USED_RAM, DIAG_NAME_S
 
 } // namespace
 
+
+void app_dump_config(void)
+{
+}
+
 /*******************************************************************************
  * Function Name  : main.
  * Description    : main routine.

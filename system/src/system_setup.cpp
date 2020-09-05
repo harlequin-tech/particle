@@ -40,6 +40,33 @@
 #include "mbedtls_util.h"
 #include "ota_flash_hal.h"
 
+extern ProtocolFacade* sp;
+#include "device_code.h"	       // XXX debug
+#include "spark_protocol_functions.h"  // XXX debug
+#include "product_store_hal.h"	       // XXX debug
+#include "deviceid_hal.h"	       // XXX debug
+
+extern const char *ota_module_fail;
+extern const char *ota_module_pass;
+extern const char *dnh_validate_fail_reason;
+extern const char *dnh_networkName;
+extern const char *dnh_networkNameOrigin;
+const char *dnh_networkNameParent = "<gok>";
+//char dnh_networkNameOriginParent[128] = "<gok>";
+const char *dnh_networkNameOriginParent = "<gok>";
+char dnh_networkNameOriginValue[16];
+extern char dnh_networkNameValue[10][16];
+#define DEBUG_DATA_SAVERS
+#ifdef DEBUG_DATA_SAVERS
+const char *dnh_dataSaver[10] = { NULL, };
+volatile char dnh_dataSaverCount = 0;
+#endif
+extern uint32_t dnh_networkNameSet;
+//const char *dnh_networkName = "not set";     // XXX debug
+
+void Spark_HandshakeDump(void);
+void Spark_Dump_Config(void);
+
 #if SETUP_OVER_SERIAL1
 #define SETUP_LISTEN_MAGIC 1
 void loop_wifitester(int c);
@@ -364,6 +391,13 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
             print("Device claimed: ");
             print(claimed ? "yes" : "no");
             print("\r\n");
+	    char claimCode[64];
+	    if (HAL_Get_Claim_Code(claimCode, sizeof(claimCode)) == 0) {
+		print("Claim code: ");
+		print(bytes2hex((uint8_t *)claimCode, 64).c_str());
+		//print(claimCode);
+		print("\r\n");
+	    }
     }
     else if ('C' == c)
     {
@@ -384,6 +418,167 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
     {
         system_format_diag_data(nullptr, 0, 0, StreamAppender::append, &serial, nullptr);
         print("\r\n");
+    } else switch (c) {
+	case 'M': {
+	    uint8_t mode = (uint8_t)system_mode();
+	    uint32_t reasonCount = 0;
+	    const char *reason = get_system_mode_reason(&reasonCount);
+	    const char *modes[] = { "DEFAULT", "AUTOMATIC", "SEMI_AUTOMATIC", "MANUAL", "SAFE_MODE" };
+	    print("System Mode: ");
+	    if (mode < (sizeof modes / sizeof modes[0])) {
+		print(modes[mode]);
+		print("\r\n");
+	    } else {
+		print(bytes2hex(&mode, 1).c_str());
+		print("\r\n");
+	    }
+	    if (reason != NULL) {
+		print("Mode Reason: ");
+		print(reason);
+		print(", count: ");
+		mode = (uint8_t)reasonCount;
+		print(bytes2hex(&mode, 1).c_str());
+		print("\r\n");
+	    }
+	    print("OTA module pass: ");
+	    print(ota_module_pass);
+	    print("\r\n");
+	    print("OTA module fail: ");
+	    print(ota_module_fail);
+	    print("\r\n");
+	    print("Validation fail: ");
+	    print(dnh_validate_fail_reason);
+	    print("\r\n");
+	    print("\r\n");
+	    Spark_Dump_Config();
+	    Spark_HandshakeDump();
+	    break;
+        }
+	case 'k': {
+	    product_details_t info;
+	    info.size = sizeof(info);
+	    spark_protocol_get_product_details(sp, &info);
+
+	    // User code was run, so persist the current values stored in the comms lib.
+	    // These will either have been left as default or overridden via PRODUCT_ID/PRODUCT_VERSION macros
+	    if (system_mode() != SAFE_MODE) {
+		print("SPARK: not SAFE_MODE");
+	    } else {      // user code was not executed, use previously persisted values
+		print("SPARK: SAFE_MODE, loading product details from flash");
+		info.product_id = HAL_GetProductStore(PRODUCT_STORE_ID);
+		info.product_version = HAL_GetProductStore(PRODUCT_STORE_VERSION);
+	    }
+	    print("SPARK: product_id 0x");
+	    print(bytes2hex((uint8_t *)&info.product_id, 2).c_str());
+	    print(", firmware_version 0x");
+	    print(bytes2hex((uint8_t *)&info.product_version, 2).c_str());
+	    print("\r\n");
+
+	    do {
+		uint8_t pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH];
+
+		memset(&pubkey, 0xff, sizeof(pubkey));
+		HAL_FLASH_Read_ServerPublicKey(pubkey);
+		print("SPARK: pubkey  ");
+		print(bytes2hex(pubkey, 4).c_str());
+		print(" ... ");
+		print(bytes2hex(&pubkey[sizeof(pubkey) - 4], 4).c_str());
+		print("\r\n");
+	    } while (0);
+
+	    do {
+		uint8_t private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH];
+		private_key_generation_t genspec;
+		genspec.size = sizeof(genspec);
+		genspec.gen = PRIVATE_KEY_GENERATE_NEVER;
+
+		memset(&private_key, 0xff, sizeof(private_key));
+		HAL_FLASH_Read_CorePrivateKey(private_key, &genspec);
+		print("SPARK: privkey ");
+		print(bytes2hex(private_key, 4).c_str());
+		print(" ... ");
+		print(bytes2hex(&private_key[sizeof(private_key) - 4], 4).c_str());
+		print("\r\n");
+	    } while (0);
+
+	    uint8_t id_length = HAL_device_ID(NULL, 0);
+	    uint8_t id[id_length];
+	    HAL_device_ID(id, id_length);
+
+	    do {
+		char buf[128];
+		if (hal_get_device_serial_number(buf, sizeof buf, nullptr) >= 0) {
+		    print("SPARK: Device Serial ");
+		    print(buf);
+		} else {
+		    print("SPARK: Device Serial <gok>");
+		}
+		print("\r\n");
+	    } while (0);
+
+	    print("NCP NetworkName: ");
+	    print(dnh_networkName);
+	    print(", count=0x");
+	    uint8_t count = (uint8_t)dnh_networkNameSet;
+	    print(bytes2hex(&count, 1).c_str());
+	    print("\r\n");
+	    for (uint32_t ind=0; ind<dnh_networkNameSet; ind++) {
+		print("    - ");
+		print(dnh_networkNameValue[ind]);
+		print("\r\n");
+	    }
+	    print("Origin: ");
+	    print(dnh_networkNameOrigin);
+	    print(" -> ");
+	    print(dnh_networkNameOriginValue);
+	    print("\r\n");
+	    print("Origin parent: ");
+	    print(dnh_networkNameOriginParent);
+	    print("\r\n");
+#ifdef DEBUG_DATA_SAVERS
+	    print("Data savers:\r\n");
+	    for (uint32_t ind=0; ind<dnh_dataSaverCount; ind++) {
+		print("    - ");
+		if (dnh_dataSaver[ind]) {
+		    print(dnh_dataSaver[ind]);
+		} else {
+		    print("(null)");
+		}
+		print("\r\n");
+	    }
+#endif
+	    break;
+	}
+	case 'n': {
+	    // print networkname
+	    char buf[128];
+	    if (get_device_name(buf, sizeof buf) > 0) {
+		print("Device name: ");
+		print(buf);
+	    } else {
+		print("Device name: (null)");
+	    }
+	    print("\r\n");
+	    break;
+	}
+	case 'N': {
+	    // set networkname
+	    char name[64];
+	    print("Enter network name: ");
+	    read_line(name, 63);
+	    if (strlen(name)>0) {
+		//HAL_Set_Claim_Code(code);
+		print("Network name set to: ");
+		print(name);
+		print("\r\n");
+	    }
+	    else {
+		print("Network name unchanged.\r\n");
+	    }
+	    break;
+	}
+	default:
+	    break;
     }
 }
 

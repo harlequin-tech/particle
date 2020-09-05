@@ -851,6 +851,81 @@ bool system_cloud_active()
     return true;
 }
 
+void Spark_Dump_Config(void)
+{
+    product_details_t info;
+    info.size = sizeof(info);
+    spark_protocol_get_product_details(sp, &info);
+
+    particle_key_errors = NO_ERROR;
+
+    // User code was run, so persist the current values stored in the comms lib.
+    // These will either have been left as default or overridden via PRODUCT_ID/PRODUCT_VERSION macros
+    if (system_mode()!=SAFE_MODE) {
+	INFO("SPARK: not SAFE_MODE\n\r");
+	HAL_SetProductStore(PRODUCT_STORE_ID, info.product_id);
+	HAL_SetProductStore(PRODUCT_STORE_VERSION, info.product_version);
+    }
+    else {      // user code was not executed, use previously persisted values
+	INFO("SPARK: SAFE_MODE, loading from flash");
+	info.product_id = HAL_GetProductStore(PRODUCT_STORE_ID);
+	info.product_version = HAL_GetProductStore(PRODUCT_STORE_VERSION);
+	if (info.product_id!=0xFFFF)
+	    spark_protocol_set_product_id(sp, info.product_id);
+	if (info.product_version!=0xFFFF)
+	    spark_protocol_set_product_firmware_version(sp, info.product_version);
+    }
+    INFO("SPARK: product_id 0x%4x, firmware_version 0x%04x", info.product_id, info.product_version);
+
+
+    do {
+	uint8_t pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH];
+
+	memset(&pubkey, 0xff, sizeof(pubkey));
+	HAL_FLASH_Read_ServerPublicKey(pubkey);
+	INFO("SPARK: pubkey %02x%02x%02x%02x .. %02x%02x",
+		pubkey[0], pubkey[1], pubkey[2], pubkey[3],
+		pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH-2],
+		pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH-1]);
+	INFO("SPARK: pubkey %02x%02x%02x%02x .. %02x%02x",
+		pubkey[0], pubkey[1], pubkey[2], pubkey[3],
+		pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH-2],
+		pubkey[EXTERNAL_FLASH_SERVER_PUBLIC_KEY_LENGTH-1]);
+    } while (0);
+
+    do {
+	uint8_t private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH];
+	private_key_generation_t genspec;
+	genspec.size = sizeof(genspec);
+	genspec.gen = PRIVATE_KEY_GENERATE_NEVER;
+
+	memset(&private_key, 0xff, sizeof(private_key));
+	HAL_FLASH_Read_CorePrivateKey(private_key, &genspec);
+	INFO("SPARK: privkey %02x%02x%02x%02x .. %02x%02x",
+		private_key[0], private_key[1], private_key[2], private_key[3],
+		private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH-2],
+		private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH-1]);
+	INFO("SPARK: privkey %02x%02x%02x%02x .. %02x%02x",
+		private_key[0], private_key[1], private_key[2], private_key[3],
+		private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH-2],
+		private_key[EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH-1]);
+    } while (0);
+
+    uint8_t id_length = HAL_device_ID(NULL, 0);
+    uint8_t id[id_length];
+    HAL_device_ID(id, id_length);
+
+    do {
+	char buf[128];
+	if (hal_get_device_serial_number(buf, sizeof buf, nullptr) >= 0) {
+	    INFO("SPARK: Device Serial \"%s\"", buf);
+	} else {
+	    INFO("SPARK: Device Serial <gok>", buf);
+	}
+    } while (0);
+
+}
+
 void Spark_Protocol_Init(void)
 {
     system_cloud_protocol_instance();
@@ -1103,6 +1178,72 @@ int Spark_Handshake(bool presence_announce)
         }
     }
     return err;
+}
+
+/**
+ * XXX debug info dump
+ */
+void Spark_HandshakeDump(void)
+{
+    LOG(INFO,"SPARK: handshake dump");
+
+    char buf[CLAIM_CODE_SIZE + 1];
+    if (!HAL_Get_Claim_Code(buf, sizeof (buf)) && buf[0] != 0 && (uint8_t)buf[0] != 0xff)
+    {
+	LOG(INFO,"Send spark/device/claim/code event for code %s", buf);
+	LOG(INFO,"Send spark/device/claim/code event for code %s", buf);
+    } else {
+        LOG(INFO,"SPARK: no claim code");
+    }
+
+    LOG(INFO, "Claim code: %02x %02x %02x %02x", 
+	    (uint8_t)buf[0], (uint8_t)buf[1],
+	    (uint8_t)buf[2], (uint8_t)buf[3]);
+
+    // open up for possibility of retrieving multiple ID datums
+    if (!HAL_Get_Device_Identifier(NULL, buf, sizeof(buf), 0, NULL) && *buf) {
+	LOG(INFO,"Send spark/device/ident/0 event \"%s\"", buf);
+	LOG(INFO,"Send spark/device/ident/0 event \"%s\"", buf);
+    }
+
+    bool udp = HAL_Feature_Get(FEATURE_CLOUD_UDP);
+#if PLATFORM_ID!=PLATFORM_ELECTRON_PRODUCTION || !defined(MODULAR_FIRMWARE)
+    ultoa(HAL_OTA_FlashLength(), buf, 10);
+    LOG(INFO,"Send spark/hardware/max_binary event \"%s\"", buf);
+    LOG(INFO,"Send spark/hardware/max_binary event \"%s\"", buf);
+#endif
+
+    uint32_t chunkSize = HAL_OTA_ChunkSize();
+    if (chunkSize!=512 || !udp) {
+	ultoa(chunkSize, buf, 10);
+	LOG(INFO,"spark/hardware/ota_chunk_size event \"%s\"", buf);
+	LOG(INFO,"spark/hardware/ota_chunk_size event \"%s\"", buf);
+    } else {
+        LOG(INFO,"SPARK: chunksize=%u, udp=%u", chunkSize, udp);
+    }
+
+    uint8_t flag = 0;
+    if (system_get_flag(SYSTEM_FLAG_PUBLISH_RESET_INFO, &flag, nullptr) == 0 && flag) {
+	system_set_flag(SYSTEM_FLAG_PUBLISH_RESET_INFO, 0, nullptr); // Publish the reset info only once
+	int reason = RESET_REASON_NONE;
+	uint32_t data = 0;
+	if (HAL_Core_Get_Last_Reset_Info(&reason, &data, nullptr) == 0 && reason != RESET_REASON_NONE)
+	{
+	    char buf[64];
+	    formatResetReasonEventData(reason, data, buf, sizeof(buf));
+	    LOG(INFO,"Send spark/device/last_reset event \"%s\"", buf);
+	    LOG(INFO,"Send spark/device/last_reset event \"%s\"", buf);
+	}
+    }
+
+    if (particle_key_errors != NO_ERROR) {
+        char buf[sizeof(unsigned long)*8+1];
+        ultoa((unsigned long)particle_key_errors, buf, 10);
+        LOG(INFO,"Send event spark/device/key/error=%s", buf);
+        LOG(INFO,"Send event spark/device/key/error=%s", buf);
+    } else {
+        LOG(INFO,"SPARK: particle_key_errors = %u", particle_key_errors);
+    }
 }
 
 // Returns true if all's well or

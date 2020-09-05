@@ -34,6 +34,7 @@
 #include <memory>
 #include <atomic>
 
+// XXX here
 // Set this macro to 0 to disable the channel security
 #ifndef BLE_CHANNEL_SECURITY_ENABLED
 #define BLE_CHANNEL_SECURITY_ENABLED 1
