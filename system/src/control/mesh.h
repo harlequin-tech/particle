@@ -25,6 +25,15 @@ namespace ctrl {
 
 namespace mesh {
 
+int startCommissionerX(uint32_t timeout);
+int addJoinerX(const char *eui64, const char *password, uint32_t timeout=0);
+int removeJoinerX(const char *eui64);
+int prepareJoinerX(uint32_t pan_id, const char *networkId, size_t networkIdSize);
+int joinNetworkX(uint32_t timeout);
+int getNetworkId(char *networkId, size_t networkIdSize);
+const char *getEui64Str(void);
+const char *getJoinPwd(void);
+
 int auth(ctrl_request* req);
 int createNetwork(ctrl_request* req);
 int startCommissioner(ctrl_request* req);

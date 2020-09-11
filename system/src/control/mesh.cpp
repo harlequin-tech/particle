@@ -167,6 +167,7 @@ const char* const VENDOR_SW_VERSION = PP_STR(SYSTEM_VERSION_STRING);
 const char* const VENDOR_DATA = "";
 
 // Current joining device credential
+char g_joinEui64Str[sizeof(otExtAddress) * 2 + 1] = {}; // +1 character for term. null
 char g_joinPwd[JOINER_PASSWORD_MAX_SIZE + 1] = {}; // +1 character for term. null
 
 // Joiner's network ID
@@ -577,17 +578,11 @@ int createNetwork(ctrl_request* req) {
     return 0;
 }
 
-int startCommissioner(ctrl_request* req) {
+int startCommissionerX(uint32_t timeout) {
     THREAD_LOCK(lock);
     const auto thread = threadInstance();
     if (!thread) {
         return SYSTEM_ERROR_INVALID_STATE;
-    }
-    // Parse request
-    PB(StartCommissionerRequest) pbReq = {};
-    int ret = decodeRequestMessage(req, PB(StartCommissionerRequest_fields), &pbReq);
-    if (ret != 0) {
-        return ret;
     }
     // Enable Thread
     if (!otDatasetIsCommissioned(thread)) {
@@ -603,6 +598,7 @@ int startCommissioner(ctrl_request* req) {
     auto state = otCommissionerGetState(thread);
     if (state == OT_COMMISSIONER_STATE_ACTIVE) {
         LOG_DEBUG(TRACE, "Commissioner is already active");
+        LOG(INFO, "XXX Commissioner is already active");		// XXX debug
     } else {
         if (state == OT_COMMISSIONER_STATE_DISABLED) {
             LOG_DEBUG(TRACE, "Starting commissioner");
@@ -618,11 +614,21 @@ int startCommissioner(ctrl_request* req) {
         LOG_DEBUG(TRACE, "Commissioner started");
     }
     g_commTimeout = DEFAULT_COMMISSIONER_TIMEOUT;
-    if (pbReq.timeout > 0) {
-        g_commTimeout = pbReq.timeout * 1000;
+    if (timeout > 0) {
+        g_commTimeout = timeout * 1000;
     }
     startCommissionerTimer();
     return 0;
+}
+
+int startCommissioner(ctrl_request* req) {
+    // Parse request
+    PB(StartCommissionerRequest) pbReq = {};
+    int ret = decodeRequestMessage(req, PB(StartCommissionerRequest_fields), &pbReq);
+    if (ret != 0) {
+        return ret;
+    }
+    return startCommissionerX(pbReq.timeout);
 }
 
 int stopCommissioner(ctrl_request* req) {
@@ -644,12 +650,62 @@ int stopCommissioner(ctrl_request* req) {
     return 0;
 }
 
-int prepareJoiner(ctrl_request* req) {
+int getNetworkId(char *networkId, size_t networkIdSize)
+{
+    const auto thread = threadInstance();
+    if (!thread) {
+	return SYSTEM_ERROR_INVALID_STATE;
+    }
+    return ot_get_network_id(thread, networkId, &networkIdSize);
+}
+
+int prepareJoinerX(uint32_t pan_id, const char *networkId, size_t networkIdSize)
+{
     THREAD_LOCK(lock);
     const auto thread = threadInstance();
     if (!thread) {
         return SYSTEM_ERROR_INVALID_STATE;
     }
+    if (networkIdSize != MESH_NETWORK_ID_LENGTH) {
+        return SYSTEM_ERROR_INVALID_ARGUMENT;
+    }
+    // Disable Thread and clear network credentials
+    CHECK(resetThread());
+    // Set PAN ID
+    // https://github.com/openthread/openthread/pull/613
+    CHECK_THREAD(otLinkSetPanId(thread, pan_id));
+    // Get factory-assigned EUI-64
+    otExtAddress eui64 = {}; // OT_EXT_ADDRESS_SIZE
+    otLinkGetFactoryAssignedIeeeEui64(thread, &eui64);
+    //char eui64Str[sizeof(eui64) * 2 + 1] = {}; // +1 character for term. null
+    bytes2hexbuf_lower_case((const uint8_t*)&eui64, sizeof(eui64), g_joinEui64Str);
+    // Generate joining device credential
+    Random rand;
+    rand.genBase32Thread(g_joinPwd, JOINER_PASSWORD_MAX_SIZE);
+    LOG_DEBUG(TRACE, "Joiner initialized: PAN ID: 0x%04x, EUI-64: %s, password: %s", (unsigned)pan_id,
+            g_joinEui64Str, g_joinPwd);
+
+    memcpy(g_joinNetworkId, networkId, networkIdSize);
+    g_joinNetworkId[networkIdSize] = '\0';
+
+    LOG(INFO, "Joiner initialized: NetworkID: %s PAN ID: 0x%04x, EUI-64: %s, password: %s", 
+	    g_joinNetworkId,
+	    (unsigned)pan_id, g_joinEui64Str, g_joinPwd); // XXX debug
+    return 0;
+}
+
+const char *getEui64Str(void)
+{
+    return g_joinEui64Str;
+}
+
+const char *getJoinPwd(void)
+{
+    return g_joinPwd;
+}
+
+int prepareJoiner(ctrl_request* req) 
+{
     // Parse request
     PB(PrepareJoinerRequest) pbReq = {};
     DecodedCString dNetworkId(&pbReq.network.network_id);
@@ -657,6 +713,18 @@ int prepareJoiner(ctrl_request* req) {
     if (ret != 0) {
         return ret;
     }
+    return prepareJoinerX(pbReq.network.pan_id, dNetworkId.data, dNetworkId.size);
+
+    // Encode a reply
+    PB(PrepareJoinerReply) pbRep = {};
+    EncodedString eEuiStr(&pbRep.eui64, g_joinEui64Str, strlen(g_joinEui64Str));
+    EncodedString eJoinPwd(&pbRep.password, g_joinPwd, JOINER_PASSWORD_MAX_SIZE);
+    ret = encodeReplyMessage(req, PB(PrepareJoinerReply_fields), &pbRep);
+    if (ret != 0) {
+        return ret;
+    }
+    return 0;
+#if 0
     if (dNetworkId.size != MESH_NETWORK_ID_LENGTH) {
         return SYSTEM_ERROR_INVALID_ARGUMENT;
     }
@@ -694,14 +762,39 @@ int prepareJoiner(ctrl_request* req) {
         return ret;
     }
     return 0;
+#endif
 }
 
-int addJoiner(ctrl_request* req) {
+int addJoinerX(const char *eui64Str, const char *password, uint32_t timeout)
+{
     THREAD_LOCK(lock);
     const auto thread = threadInstance();
     if (!thread) {
         return SYSTEM_ERROR_INVALID_STATE;
     }
+
+#if 0
+    if (strlen(eui64) != sizeof(otExtAddress) * 2 || strlen(password) < JOINER_PASSWORD_MIN_SIZE ||
+            strlen(password) > JOINER_PASSWORD_MAX_SIZE) {
+        return SYSTEM_ERROR_INVALID_ARGUMENT;
+    }
+#endif
+
+    // Add joiner
+    otExtAddress eui64 = {};
+    hexToBytes(eui64Str, (char*)&eui64, sizeof(otExtAddress));
+    if (timeout == 0) {
+	timeout = DEFAULT_JOINER_ENTRY_TIMEOUT;
+    }
+    LOG_DEBUG(TRACE, "Adding joiner: EUI-64: %s, password: %s", eui64Str, password);
+    LOG(INFO, "XXX Adding joiner: EUI-64: %s, password: %s", eui64Str, password); // XXX debug
+    CHECK_THREAD(otCommissionerAddJoiner(thread, &eui64, password, timeout));
+    startCommissionerTimer();
+    return 0;
+}
+
+int addJoiner(ctrl_request* req) 
+{
     // Parse request
     PB(AddJoinerRequest) pbReq = {};
     DecodedCString dEui64Str(&pbReq.eui64);
@@ -714,26 +807,29 @@ int addJoiner(ctrl_request* req) {
             dJoinPwd.size > JOINER_PASSWORD_MAX_SIZE) {
         return SYSTEM_ERROR_INVALID_ARGUMENT;
     }
-    // Add joiner
-    otExtAddress eui64 = {};
-    hexToBytes(dEui64Str.data, (char*)&eui64, sizeof(otExtAddress));
-    unsigned timeout = DEFAULT_JOINER_ENTRY_TIMEOUT;
-    if (pbReq.timeout > 0) {
-        timeout = pbReq.timeout;
-    }
-    LOG_DEBUG(TRACE, "Adding joiner: EUI-64: %s, password: %s", dEui64Str.data, dJoinPwd.data);
-    LOG(INFO, "XXX Adding joiner: EUI-64: %s, password: %s", dEui64Str.data, dJoinPwd.data); // XXX debug
-    CHECK_THREAD(otCommissionerAddJoiner(thread, &eui64, dJoinPwd.data, timeout));
-    startCommissionerTimer();
-    return 0;
+    return addJoinerX(dEui64Str.data, dJoinPwd.data, pbReq.timeout);
 }
 
-int removeJoiner(ctrl_request* req) {
+int removeJoinerX(const char *eui64Str) 
+{
     THREAD_LOCK(lock);
     const auto thread = threadInstance();
     if (!thread) {
         return SYSTEM_ERROR_INVALID_STATE;
     }
+    if (strlen(eui64Str) != sizeof(otExtAddress) * 2) {
+        return SYSTEM_ERROR_INVALID_ARGUMENT;
+    }
+    // Remove joiner
+    otExtAddress eui64 = {};
+    hexToBytes(eui64Str, (char*)&eui64, sizeof(otExtAddress));
+    LOG_DEBUG(TRACE, "Removing joiner: EUI-64: %s", dEui64Str.data);
+    CHECK_THREAD(otCommissionerRemoveJoiner(thread, &eui64));
+    startCommissionerTimer();
+    return 0;
+}
+
+int removeJoiner(ctrl_request* req) {
     // Parse request
     PB(RemoveJoinerRequest) pbReq = {};
     DecodedCString dEui64Str(&pbReq.eui64);
@@ -744,32 +840,23 @@ int removeJoiner(ctrl_request* req) {
     if (dEui64Str.size != sizeof(otExtAddress) * 2) {
         return SYSTEM_ERROR_INVALID_ARGUMENT;
     }
-    // Remove joiner
-    otExtAddress eui64 = {};
-    hexToBytes(dEui64Str.data, (char*)&eui64, sizeof(otExtAddress));
-    LOG_DEBUG(TRACE, "Removing joiner: EUI-64: %s", dEui64Str.data);
-    CHECK_THREAD(otCommissionerRemoveJoiner(thread, &eui64));
-    startCommissionerTimer();
-    return 0;
+    return removeJoinerX(dEui64Str.data);
 }
 
-int joinNetwork(ctrl_request* req) {
+int joinNetworkX(uint32_t timeout)
+{
     THREAD_LOCK(lock);
     const auto thread = threadInstance();
     if (!thread) {
         return SYSTEM_ERROR_INVALID_STATE;
     }
-    // Parse request
-    //particle_ctrl_mesh_JoinNetworkRequest pbReq = {};
-    PB(JoinNetworkRequest) pbReq = {};
-    int ret = decodeRequestMessage(req, PB(JoinNetworkRequest_fields), &pbReq);
-    if (ret != 0) {
-        return ret;
+
+    if (timeout == 0) {
+	timeout = DEFAULT_JOINER_TIMEOUT;
+    } else {
+        timeout *= 1000;
     }
-    unsigned timeout = DEFAULT_JOINER_TIMEOUT;
-    if (pbReq.timeout > 0) {
-        timeout = pbReq.timeout * 1000;
-    }
+
     CHECK_THREAD(otIp6SetEnabled(thread, true));
     struct JoinStatus {
         otError result;
@@ -836,6 +923,17 @@ int joinNetwork(ctrl_request* req) {
     LOG(INFO, "Successfully joined the network");
     notifyJoined(true);
     return 0;
+}
+
+int joinNetwork(ctrl_request* req) {
+    // Parse request
+    //particle_ctrl_mesh_JoinNetworkRequest pbReq = {};
+    PB(JoinNetworkRequest) pbReq = {};
+    int ret = decodeRequestMessage(req, PB(JoinNetworkRequest_fields), &pbReq);
+    if (ret != 0) {
+        return ret;
+    }
+    return joinNetworkX(pbReq.timeout);
 }
 
 int leaveNetwork(ctrl_request* req) {

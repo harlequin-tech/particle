@@ -23,6 +23,9 @@ namespace particle {
 namespace control {
 namespace config {
 
+int isDeviceSetupDoneX(void);
+int setDeviceSetupDoneX(bool done);
+
 int getDeviceId(ctrl_request* req);
 int getSerialNumber(ctrl_request* req);
 int getSystemVersion(ctrl_request* req);

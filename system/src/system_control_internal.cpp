@@ -482,9 +482,15 @@ SystemControl* SystemControl::instance() {
     return &g_systemControl;
 }
 
+SystemControl* system_ctrl_instance() 
+{
+    return &g_systemControl;
+}
+
 } // particle::system
 
 } // particle
+
 
 // System API
 int system_ctrl_set_app_request_handler(ctrl_request_handler_fn handler, void* reserved) {

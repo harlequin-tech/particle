@@ -24,6 +24,9 @@
  */
 
 #include "system_setup.h"
+#include "system_control_internal.h"	// XXX debug
+#include "control_request_handler.h"	// XXX debug
+
 #include "delay_hal.h"
 #include "ota_flash_hal.h"
 #include "wlan_hal.h"
@@ -39,6 +42,10 @@
 #include "system_ymodem.h"
 #include "mbedtls_util.h"
 #include "ota_flash_hal.h"
+
+#include "control/mesh.h"		// XXX debug
+#include "control/config.h"		// XXX debug
+//#include "control/proto/mesh.pb.h"	// XXX debug
 
 extern ProtocolFacade* sp;
 #include "device_code.h"	       // XXX debug
@@ -71,6 +78,16 @@ void Spark_Dump_Config(void);
 #define SETUP_LISTEN_MAGIC 1
 void loop_wifitester(int c);
 #include "spark_wiring_usartserial.h"
+
+
+#include "system_control_internal.h"
+namespace particle {
+
+namespace system {
+    extern SystemControl g_systemControl;
+
+}
+}
 
 static system_tester_handlers_t s_tester_handlers = {0};
 
@@ -419,6 +436,120 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
         system_format_diag_data(nullptr, 0, 0, StreamAppender::append, &serial, nullptr);
         print("\r\n");
     } else switch (c) {
+	case 'S': {	// toggle device setup done
+	    char buf[128];
+	    int res = particle::control::config::isDeviceSetupDoneX();
+	    if (res < 0) {
+		print("failed to get device setup done: res=");
+		snprintf(buf, sizeof(buf), "%i", res);
+		print(buf); print("\r\n");
+		break;
+	    }
+	    snprintf(buf, sizeof(buf), "deviceSetupDone %i -> %i\r\n", res, !res);
+	    print(buf);
+	    res = particle::control::config::setDeviceSetupDoneX(!res);
+	    snprintf(buf, sizeof(buf), "res = %i\r\n", res);
+	    print(buf);
+	}
+	break;
+	case 'a': {	// add joiner 
+	    char eui64[32] = "";
+	    char password[64] = "";
+            print("Joiner eui64: ");
+            read_line(eui64, sizeof(eui64)-1);
+	    if (strlen(eui64) == 0) {
+		print("cancelled\n\r");
+		break;
+	    }
+            print("Joiner password: ");
+            read_line(password, sizeof(password)-1);
+	    if (strlen(password) == 0) {
+		print("cancelled\n\r");
+		break;
+	    }
+	    int res = particle::ctrl::mesh::addJoinerX(eui64, password, 0);
+	    print("addJoiner res = ");
+	    snprintf(eui64, sizeof(eui64), "%i", res);
+	    print(eui64);
+	    print("\r\n");
+	}
+	break;
+	case 'r': {	// remove joiner 
+	    char eui64[32] = "";
+            print("Joiner eui64: ");
+            read_line(eui64, sizeof(eui64)-1);
+	    if (strlen(eui64) == 0) {
+		print("cancelled\n\r");
+		break;
+	    }
+	    int res = particle::ctrl::mesh::removeJoinerX(eui64);
+	    print("removeJoiner res = ");
+	    snprintf(eui64, sizeof(eui64), "%i", res);
+	    print(eui64);
+	    print("\r\n");
+	}
+	break;
+	case 'j': {	// join network
+	    char buf[32];
+	    print("Joining network\r\n");
+	    int res = particle::ctrl::mesh::joinNetworkX(60);
+	    print("joinNetwork res = ");
+	    snprintf(buf, sizeof(buf), "%i", res);
+	    print(buf);
+	    print("\r\n");
+	}
+	break;
+	case 'o': {
+	    char buf[32];
+	    print("Starting commissioner\r\n");
+	    int res = particle::ctrl::mesh::startCommissionerX(300);
+	    print("startCommissioner res = ");
+	    snprintf(buf, sizeof(buf), "%i", res);
+	    print(buf); print("\r\n");
+        }
+	break;
+	case 'O': {
+	    char buf[32];
+	    int res = particle::ctrl::mesh::stopCommissioner(nullptr);
+	    print("stopCommissioner res = ");
+	    snprintf(buf, sizeof(buf), "%i", res);
+	    print(buf); print("\r\n");
+        }
+	break;
+	case 'p': {	// prep to join	network
+	    char networkId[24 + 1] = "5dec24ab58fa4e00012e7b7e";
+	    //particle::ctrl::mesh::getNetworkId(networkId, sizeof(networkId));
+	    int res = particle::ctrl::mesh::prepareJoinerX(0x248d, networkId, sizeof(networkId)-1);
+	    char buf[32];
+	    print("prepareJoinerX(0x248d, \"");
+	    print(networkId);
+	    print(") res = ");
+	    snprintf(buf, sizeof(buf), "%i", res);
+	    print(buf); print("\r\n");
+	    if (res == 0) {
+		print("      eui64: \"");
+		print(particle::ctrl::mesh::getEui64Str());
+		print("\"\r\n");
+		print("    joinPwd: \"");
+		print(particle::ctrl::mesh::getJoinPwd());
+		print("\"\r\n");
+	    }
+#if 0
+	    //int res = particle::ctrl::mesh::startCommissionerX(30);
+	    particle::system::SystemControl *systemControl = particle::system::system_ctrl_instance(); 
+	    particle_ctrl_mesh_StartCommissionerRequest req = { 30 };
+	    //particle::ControlRequestChannel *crq = nullptr;
+	    systemControl->processRequest((ctrl_request *)&req, NULL);
+	    //ctrl::mesh::startCommissioner(NULL);
+	    //const auto thread = threadInstance();
+            //CHECK_THREAD(otCommissionerStart(thread, nullptr, nullptr, nullptr));
+#endif
+	    }
+	break;
+	case 'D':
+	    print("Entering DFU mode\r\n");
+	    System.dfu(true);
+	    break;
 	case 'M': {
 	    uint8_t mode = (uint8_t)system_mode();
 	    uint32_t reasonCount = 0;
@@ -559,6 +690,22 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
 		print("Device name: (null)");
 	    }
 	    print("\r\n");
+
+	    char networkId[24 + 1] = {};
+	    int res = particle::ctrl::mesh::getNetworkId(networkId, sizeof(networkId));
+	    if (res != 0) {
+		snprintf(buf, sizeof(buf), "getNetworkId() failed: %d\n", res);
+		print(buf);
+		print("\r\n");
+	    } else {
+		print("Network Id: \"");
+		print(networkId);
+		print("\"\r\n");
+	    }
+	    res = particle::control::config::isDeviceSetupDoneX();
+	    print("isDeviceSetupDoneX() =  ");
+	    snprintf(buf, sizeof(buf), "%i", res);
+	    print(buf); print("\r\n");
 	    break;
 	}
 	case 'N': {

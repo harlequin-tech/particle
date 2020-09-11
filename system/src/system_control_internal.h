@@ -88,6 +88,8 @@ inline void SystemControl::setResult(ctrl_request* req, int result, ctrl_complet
     channel->setResult(req, result, handler, data);
 }
 
+SystemControl* system_ctrl_instance(void);
+
 } // particle::system
 
 } // particle
