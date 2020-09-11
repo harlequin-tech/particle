@@ -93,7 +93,7 @@ int system_sleep_enter_standby_compat(long seconds, uint32_t param) {
     }
 
     if (!(param & SYSTEM_SLEEP_FLAG_DISABLE_WKP_PIN)) {
-        config.gpio(WKP, RISING);
+        config.gpio(WKP, FALLING);	// XXX RISING
     }
 
     return hal_sleep_enter(config.halConfig(), nullptr, nullptr);
