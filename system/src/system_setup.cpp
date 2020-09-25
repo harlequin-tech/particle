@@ -436,6 +436,20 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
         system_format_diag_data(nullptr, 0, 0, StreamAppender::append, &serial, nullptr);
         print("\r\n");
     } else switch (c) {
+	case 'u':
+                if (HAL_Set_Claim_Code("002b63786c70714e7a6e664b334e4a2f326256587438316a6e6444485055626473672b697365754a69773779523672796149416a3277324673656a6343547a00") == 0) {
+		    print("Claim code set\r\n");
+		} else {
+		    print("Failed to set claim code\r\n");
+		}
+		break;
+	case 'U':
+                if (HAL_Set_Claim_Code(NULL) == 0) {
+		    print("Claim code cleared, device claimed\r\n");
+		} else {
+		    print("Failed to clear claim code and claim device\r\n");
+		}
+		break;
 	case 'S': {	// toggle device setup done
 	    char buf[128];
 	    int res = particle::control::config::isDeviceSetupDoneX();
