@@ -24,6 +24,9 @@
 #include "stdlib.h"
 #include "service_debug.h"
 
+#include "communication_diagnostic.h"
+#include <limits>
+
 namespace particle
 {
 namespace protocol
@@ -127,6 +130,10 @@ private:
 	// uint8_t reserved;
 	std::function<void(Delivery)>* delivered;
 
+	/**
+	 * Time when the coap message is sent
+	 */
+	system_tick_t send_time;
 
 	/**
 	 * How many data bytes follow.
@@ -164,7 +171,7 @@ public:
 	static const uint8_t NSTART = 1;
 
 
-	CoAPMessage(message_id_t id_) : next(nullptr), timeout(0), id(id_), transmit_count(0), delivered(nullptr), data_len(0) {
+	CoAPMessage(message_id_t id_) : next(nullptr), timeout(0), id(id_), transmit_count(0), delivered(nullptr), send_time(0), data_len(0) {
 		message_count++;
 	}
 
@@ -222,11 +229,34 @@ public:
 		CoAPType::Enum coapType = CoAP::type(get_data());
 		if (coapType==CoAPType::CON) {
 			timeout = now + transmit_timeout(transmit_count);
+			if (transmit_count == 0) {
+				g_trasmittedMessageCounter++;
+			}
+			else {
+				g_retransmittedMessageCounter++;
+			}
 			transmit_count++;
 			return transmit_count <= MAX_RETRANSMIT+1;
 		}
 		// other message types are not resent on timeout
 		return false;
+	}
+
+	/**
+	 * Sets the time a coap message is sent
+	 */
+	bool set_send_time(system_tick_t send_time)
+	{
+		this->send_time = send_time;
+		return true;
+	}
+
+	/**
+	 * Gets the time a coap message was sent
+	 */
+	system_tick_t get_send_time()
+	{
+		return this->send_time;
 	}
 
 	/**

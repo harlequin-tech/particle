@@ -43,6 +43,7 @@
 #include "system_network_internal.h"
 #include "bytes2hexbuf.h"
 #include "system_threading.h"
+#include <cstdio>
 #if HAL_PLATFORM_DCT
 #include "dct.h"
 #endif // HAL_PLATFORM_DCT
@@ -285,6 +286,11 @@ void set_flag(void* flag)
 	*p = true;
 }
 
+namespace {
+// FIXME: Dirty hack
+bool ledIsOverridden = false;
+} // namespace
+
 int Spark_Prepare_For_Firmware_Update(FileTransfer::Descriptor& file, uint32_t flags, void* reserved)
 {
     if (file.store==FileTransfer::Store::FIRMWARE)
@@ -305,10 +311,16 @@ int Spark_Prepare_For_Firmware_Update(FileTransfer::Descriptor& file, uint32_t f
 		}
 		else {
             system_set_flag(SYSTEM_FLAG_OTA_UPDATE_PENDING, 0, nullptr);
-            RGB.control(true);
-            // Get base color used for the update process indication
-            const LEDStatusData* status = led_signal_status(LED_SIGNAL_FIRMWARE_UPDATE, nullptr);
-            RGB.color(status ? status->color : RGB_COLOR_MAGENTA);
+            // FIXME: use the APIs in system_led_signal.h instead.
+            // The RGB may behave weirdly if multi-threading is enabled and user application
+            // also wants to control the RGB.
+            ledIsOverridden = LED_RGB_IsOverRidden();
+            if (!ledIsOverridden) {
+                RGB.control(true);
+                // Get base color used for the update process indication
+                const LEDStatusData* status = led_signal_status(LED_SIGNAL_FIRMWARE_UPDATE, nullptr);
+                RGB.color(status ? status->color : RGB_COLOR_MAGENTA);
+            }
             SPARK_FLASH_UPDATE = 1;
             TimingFlashUpdateTimeout = 0;
             system_notify_event(firmware_update, firmware_update_begin, &file);
@@ -393,7 +405,7 @@ int Spark_Finish_Firmware_Update(FileTransfer::Descriptor& file, uint32_t flags,
         if (file.store==FileTransfer::Store::FIRMWARE)
         {
             hal_update_complete_t result = HAL_FLASH_End(module ? (hal_module_t*)module : &mod);
-            system_notify_event(firmware_update, result<=HAL_UPDATE_ERROR ? firmware_update_complete : firmware_update_failed, &file);
+            system_notify_event(firmware_update, result<=HAL_UPDATE_ERROR ? firmware_update_failed : firmware_update_complete, &file);
             res = (result <= HAL_UPDATE_ERROR);
 
             // always restart for now
@@ -409,7 +421,12 @@ int Spark_Finish_Firmware_Update(FileTransfer::Descriptor& file, uint32_t flags,
         system_notify_event(firmware_update, firmware_update_failed, &file);
     }
 
-    RGB.control(false);
+    // FIXME: use APIs in system_led_signal.h instead
+    // It might lease the control that user application just takes over.
+    if (!ledIsOverridden) {
+        RGB.control(false);
+    }
+
     return res;
 }
 
@@ -421,7 +438,10 @@ int Spark_Save_Firmware_Chunk(FileTransfer::Descriptor& file, const uint8_t* chu
     if (file.store==FileTransfer::Store::FIRMWARE)
     {
         result = HAL_FLASH_Update(chunk, file.chunk_address, file.chunk_size, NULL);
-        LED_Toggle(LED_RGB);
+        // FIXME: use APIs in system_led_signal.h instead
+        if (!ledIsOverridden) {
+            LED_Toggle(LED_RGB);
+        }
     }
     return result;
 }
@@ -463,11 +483,15 @@ public:
 	AppendData(appender_fn fn, void* data) : AppendBase(fn, data) {}
 
     bool write(uint16_t value) {
-    		return writeDirect(value);
+		return writeDirect(value);
     }
 
     bool write(int32_t value) {
-    		return writeDirect(value);
+		return writeDirect(value);
+    }
+
+	bool write(uint32_t value) {
+		return writeDirect(value);
     }
 
 };
@@ -513,6 +537,12 @@ public:
     bool write(int value) {
         char buf[12];
         return write(itoa(value, buf, 10));
+    }
+
+    bool write(unsigned int value) {
+        char buf[12] = {};
+        snprintf(buf, sizeof(buf), "%u", value);
+        return write(buf);
     }
 
     inline bool write(char c) {
@@ -743,19 +773,27 @@ protected:
 		if (!fmt.isSourceOk(src)) {
 			return 0;
 		}
-	    switch (src->type) {
-	    case DIAG_TYPE_INT: {
-	        AbstractIntegerDiagnosticData::IntType val = 0;
-	        const int ret = AbstractIntegerDiagnosticData::get(src, val);
-	        if ((ret == 0 && !fmt.formatSourceInt(src, val)) || (ret != 0 && !fmt.formatSourceError(src, ret))) {
-	            return SYSTEM_ERROR_TOO_LARGE;
-	        }
-	        break;
-	    }
-	    default:
-	        return SYSTEM_ERROR_NOT_SUPPORTED;
-	    }
-	    return 0;
+		switch (src->type) {
+		case DIAG_TYPE_INT: {
+			AbstractIntegerDiagnosticData::IntType val = 0;
+			const int ret = AbstractIntegerDiagnosticData::get(src, val);
+			if ((ret == 0 && !fmt.formatSourceInt(src, val)) || (ret != 0 && !fmt.formatSourceError(src, ret))) {
+				return SYSTEM_ERROR_TOO_LARGE;
+			}
+			break;
+		}
+		case DIAG_TYPE_UINT: {
+			AbstractUnsignedIntegerDiagnosticData::IntType val = 0;
+			const int ret = AbstractUnsignedIntegerDiagnosticData::get(src, val);
+			if ((ret == 0 && !fmt.formatSourceUnsignedInt(src, val)) || (ret != 0 && !fmt.formatSourceError(src, ret))) {
+				return SYSTEM_ERROR_TOO_LARGE;
+			}
+			break;
+		}
+		default:
+			return SYSTEM_ERROR_NOT_SUPPORTED;
+		}
+		return 0;
 	}
 
 	static int formatSources(T& formatter, const uint16_t* id, size_t count, unsigned flags) {
@@ -827,6 +865,10 @@ public:
 	inline bool formatSourceInt(const diag_source* src, AbstractIntegerDiagnosticData::IntType val) {
 		return json.write_value(src->name, val);
 	}
+
+	inline bool formatSourceUnsignedInt(const diag_source* src, AbstractUnsignedIntegerDiagnosticData::IntType val) {
+		return json.write_value(src->name, val);
+	}
 };
 
 
@@ -834,6 +876,7 @@ class BinaryDiagnosticsFormatter : public AbstractDiagnosticsFormatter<BinaryDia
 
 	AppendData& data;
 
+	// FIXME: single size for all the diagnostics is just plain wrong
 	using value = AbstractIntegerDiagnosticData::IntType;
 	using id = typeof(diag_source::id);
 
@@ -862,6 +905,10 @@ public:
 	}
 
 	inline bool formatSourceInt(const diag_source* src, AbstractIntegerDiagnosticData::IntType val) {
+		return data.write(src->id) && data.write(val);
+	}
+
+	inline bool formatSourceUnsignedInt(const diag_source* src, AbstractUnsignedIntegerDiagnosticData::IntType val) {
 		return data.write(src->id) && data.write(val);
 	}
 

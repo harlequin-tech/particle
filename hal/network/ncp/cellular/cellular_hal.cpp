@@ -96,9 +96,9 @@ hal_net_access_tech_t fromCellularAccessTechnology(CellularAccessTechnology rat)
         return NET_ACCESS_TECHNOLOGY_UTRAN;
     case CellularAccessTechnology::LTE:
         return NET_ACCESS_TECHNOLOGY_LTE;
-    case CellularAccessTechnology::EC_GSM_IOT:
+    case CellularAccessTechnology::LTE_CAT_M1:
         return NET_ACCESS_TECHNOLOGY_LTE_CAT_M1;
-    case CellularAccessTechnology::E_UTRAN:
+    case CellularAccessTechnology::LTE_NB_IOT:
         return NET_ACCESS_TECHNOLOGY_LTE_CAT_NB1;
     default:
         return NET_ACCESS_TECHNOLOGY_UNKNOWN;
@@ -251,8 +251,10 @@ int cellular_credentials_clear(void* reserved) {
     return 0;
 }
 
-cellular_result_t cellular_global_identity(CellularGlobalIdentity* cgi_, void* reserved_) {
-    CellularGlobalIdentity cgi;
+cellular_result_t cellular_global_identity(CellularGlobalIdentity* cgi, void* reserved) {
+    // Validate Argument(s)
+    (void)reserved;
+    CHECK_TRUE((nullptr != cgi), SYSTEM_ERROR_INVALID_ARGUMENT);
 
     // Acquire Cellular NCP Client
     const auto mgr = cellularNetworkManager();
@@ -260,21 +262,14 @@ cellular_result_t cellular_global_identity(CellularGlobalIdentity* cgi_, void* r
     const auto client = mgr->ncpClient();
     CHECK_TRUE(client, SYSTEM_ERROR_UNKNOWN);
 
-    // Validate Argument(s)
-    (void)reserved_;
-    CHECK_TRUE((nullptr != cgi_), SYSTEM_ERROR_INVALID_ARGUMENT);
-
     // Load cached data into result struct
-    CHECK(client->getCellularGlobalIdentity(&cgi));
+    CHECK(client->getCellularGlobalIdentity(cgi));
 
     // Validate cache
-    CHECK_TRUE(0 != cgi.mobile_country_code, SYSTEM_ERROR_BAD_DATA);
-    CHECK_TRUE(0 != cgi.mobile_network_code, SYSTEM_ERROR_BAD_DATA);
-    CHECK_TRUE(0xFFFF != cgi.location_area_code, SYSTEM_ERROR_BAD_DATA);
-    CHECK_TRUE(0xFFFFFFFF != cgi.cell_id, SYSTEM_ERROR_BAD_DATA);
-
-    // Update result
-    *cgi_ = cgi;
+    CHECK_TRUE(0 != cgi->mobile_country_code, SYSTEM_ERROR_BAD_DATA);
+    CHECK_TRUE(0 != cgi->mobile_network_code, SYSTEM_ERROR_BAD_DATA);
+    CHECK_TRUE(0xFFFF != cgi->location_area_code, SYSTEM_ERROR_BAD_DATA);
+    CHECK_TRUE(0xFFFFFFFF != cgi->cell_id, SYSTEM_ERROR_BAD_DATA);
 
     return SYSTEM_ERROR_NONE;
 }
@@ -373,9 +368,9 @@ int cellular_signal(CellularSignalHal* signal, cellular_signal_t* signalExt) {
         case CellularStrengthUnits::RSCP: {
             // Convert to dBm [-121, -25], see 3GPP TS 25.133 9.1.1.3
             // Reported multiplied by 100
-            signalExt->rscp = (strn != 255) ? (strn - 116) * 100 : std::numeric_limits<int32_t>::min();
+            signalExt->rscp = (strn != 255) ? (strn - 121) * 100 : std::numeric_limits<int32_t>::min();
             // RSCP in % [0, 100] based on [-121, -25] range mapped to [0, 65535] integer range
-            signalExt->strength = (strn != 255) ? (strn + 5) * 65535 / 96 : std::numeric_limits<int32_t>::min();
+            signalExt->strength = (strn != 255) ? strn * 65535 / 96 : std::numeric_limits<int32_t>::min();
             break;
         }
         case CellularStrengthUnits::RSRP: {

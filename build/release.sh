@@ -1,14 +1,14 @@
 #!/bin/bash
 set -o errexit -o pipefail -o noclobber -o nounset
 
-VERSION="1.5.0-rc.2"
+VERSION="1.5.4-rc.1"
 
 function display_help ()
 {
     echo '
 usage: release.sh [--output-directory=<binary_output_directory>]
                   (--platform=<argon|asom|boron|bsom...
-                  |b5som|electron|p1|photon|xenon>...
+                  |b5som|electron|p1|photon|xenon|tracker>...
                   | --platform-id=<6|8|10|12|13|14|22|23|25>)
                   [--debug] [--help] [--tests]
 
@@ -246,6 +246,10 @@ elif [ ! -z $PLATFORM ]; then
             PLATFORM_ID="25"
             MESH=true
             ;;
+        "tracker")
+            PLATFORM_ID="26"
+            MESH=true
+            ;;
         *)
             echo "ERROR: No rules to release platform: \"$PLATFORM\"!"
             exit 6
@@ -287,6 +291,10 @@ else
             ;;
         25)
             PLATFORM="b5som"
+            MESH=true
+            ;;
+        26)
+            PLATFORM="tracker"
             MESH=true
             ;;
         *)
@@ -365,7 +373,11 @@ elif [ $PLATFORM_ID -eq 10 ]; then
     # Configure
     cd ../modules
     MODULAR="y"
-    declare -a debugBuildOptions=("y" "n")
+    if [ $DEBUG = true ]; then
+        declare -a debugBuildOptions=("y" "n")
+    else
+        declare -a debugBuildOptions=("n")
+    fi
 
     for debugBuildOption in ${debugBuildOptions[@]}; do
         DEBUG_BUILD=$debugBuildOption
@@ -383,7 +395,7 @@ elif [ $PLATFORM_ID -eq 10 ]; then
     done
 
 # Mesh
-elif [ $PLATFORM_ID -eq 12 ] || [ $PLATFORM_ID -eq 13 ] || [ $PLATFORM_ID -eq 14 ] || [ $PLATFORM_ID -eq 22 ] || [ $PLATFORM_ID -eq 23 ] || [ $PLATFORM_ID -eq 25 ]; then
+elif [ $PLATFORM_ID -eq 12 ] || [ $PLATFORM_ID -eq 13 ] || [ $PLATFORM_ID -eq 14 ] || [ $PLATFORM_ID -eq 22 ] || [ $PLATFORM_ID -eq 23 ] || [ $PLATFORM_ID -eq 25 ] || [ $PLATFORM_ID -eq 26 ]; then
     # Configure
     if [ $DEBUG = true ]; then
         cd ../main

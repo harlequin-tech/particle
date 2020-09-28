@@ -96,6 +96,7 @@ std::recursive_mutex mdm_mutex;
 #define UMNOPROF_TIMEOUT  ( 1 * 1000)
 #define CEDRXS_TIMEOUT    (  1 * 1000)
 #define CFUN_TIMEOUT      (180 * 1000)
+#define UCGED_TIMEOUT     (  1 * 1000)
 
 // num sockets
 #define NUMSOCKETS      ((int)(sizeof(_sockets)/sizeof(*_sockets)))
@@ -146,14 +147,17 @@ AcT toCellularAccessTechnology(int rat) {
             return ACT_UTRAN;
         case UBLOX_SARA_RAT_LTE:
             return ACT_LTE;
-        case UBLOX_SARA_RAT_EC_GSM_IOT:
+        case UBLOX_SARA_RAT_LTE_CAT_M1:
             return ACT_LTE_CAT_M1;
-        case UBLOX_SARA_RAT_E_UTRAN:
+        case UBLOX_SARA_RAT_LTE_NB_IOT:
             return ACT_LTE_CAT_NB1;
         default:
             return ACT_UNKNOWN;
     }
 }
+
+// see 3GPP TS 45.008 [20] subclause 8.2.4
+const char compatQualMap[] = { 49, 43, 37, 25, 19, 13, 7, 0 };
 
 } // anonymous
 
@@ -355,7 +359,7 @@ bool MDMParser::_atOk(void)
 
 int MDMParser::waitFinalResp(_CALLBACKPTR cb /* = NULL*/,
                              void* param /* = NULL*/,
-                             system_tick_t timeout_ms /*= 5000*/)
+                             system_tick_t timeout_ms /*= 10000*/)
 {
     if (_cancel_all_operations) return WAIT;
 
@@ -414,8 +418,6 @@ int MDMParser::waitFinalResp(_CALLBACKPTR cb /* = NULL*/,
                     MDM_PRINTF("New SMS at index %d\r\n", a);
                     if (sms_cb) SMSreceived(a);
                 }
-                // TODO: This should include other LTE devices,
-                // perhaps adding _net.act < 7
                 else if ((_dev.dev != DEV_SARA_R410) && (sscanf(cmd, "CIEV: 9,%d", &a) == 1)) {
                     MDM_PRINTF("CIEV matched: 9,%d\r\n", a);
                     // Wait until the system is attached before attempting to act on GPRS detach
@@ -460,7 +462,7 @@ int MDMParser::waitFinalResp(_CALLBACKPTR cb /* = NULL*/,
 
                 // GSM/UMTS Specific -------------------------------------------
                 // +UUPSDD: <profile_id>
-                if (sscanf(cmd, "UUPSDD: %s", s) == 1) {
+                if (sscanf(cmd, "UUPSDD: %31s", s) == 1) {
                     MDM_PRINTF("UUPSDD: %s matched\r\n", PROFILE);
                     if ( !strcmp(s, PROFILE) ) {
                         _ip = NOIP;
@@ -474,9 +476,9 @@ int MDMParser::waitFinalResp(_CALLBACKPTR cb /* = NULL*/,
                     // +CREG|CGREG: <n>,<stat>[,<lac>,<ci>[,AcT[,<rac>]]] // reply to AT+CREG|AT+CGREG
                     // +CREG|CGREG: <stat>[,<lac>,<ci>[,AcT[,<rac>]]]     // URC
                     b = (int)0xFFFF; c = (int)0xFFFFFFFF; d = -1;
-                    r = sscanf(cmd, "%s %*d,%d,\"%x\",\"%x\",%d",s,&a,&b,&c,&d);
+                    r = sscanf(cmd, "%31s %*d,%d,\"%x\",\"%x\",%d",s,&a,&b,&c,&d);
                     if (r <= 1)
-                        r = sscanf(cmd, "%s %d,\"%x\",\"%x\",%d",s,&a,&b,&c,&d);
+                        r = sscanf(cmd, "%31s %d,\"%x\",\"%x\",%d",s,&a,&b,&c,&d);
                     if (r >= 2) {
                         Reg *reg = !strcmp(s, "CREG:")  ? &_net.csd :
                                    !strcmp(s, "CGREG:") ? &_net.psd :
@@ -489,6 +491,16 @@ int MDMParser::waitFinalResp(_CALLBACKPTR cb /* = NULL*/,
                             else if (a == 3) *reg = REG_DENIED;   // 3: registration denied
                             else if (a == 4) *reg = REG_UNKNOWN;  // 4: unknown
                             else if (a == 5) *reg = REG_ROAMING;  // 5: registered, roaming
+
+                            // R410 : Look out for a CEREG: de-registration URC while attached
+                            if (_dev.dev == DEV_SARA_R410 && _attached && !REG_OK(*reg) && !strcmp(s, "CEREG:")) {
+                                MDM_PRINTF("Cell de-registered\r\n");
+                                _attached_urc = 0;
+                                _ip = NOIP;
+                                _attached = false;
+                                HAL_NET_notify_disconnected();
+                            }
+
                             if ((r >= 3) && (b != (int)0xFFFF))      _net.cgi.location_area_code = b;
                             if ((r >= 4) && (c != (int)0xFFFFFFFF))  _net.cgi.cell_id  = c;
                             // access technology
@@ -558,10 +570,12 @@ int MDMParser::_cbCEDRXS(int type, const char* buf, int len, EdrxActs* edrxActs)
     return WAIT;
 }
 
-int MDMParser::_cbString(int type, const char* buf, int len, char* str)
+int MDMParser::_cbString(int type, const char* buf, int len, CStringHelper* str)
 {
-    if (str && (type == TYPE_UNKNOWN)) {
-        if (sscanf(buf, "\r\n%s\r\n", str) == 1)
+    if (str && str->str && (str->size > 1) && (type == TYPE_UNKNOWN)) {
+        char format[32] = {};
+        snprintf(format, sizeof(format), "\r\n%%%us\r\n", str->size - 1);
+        if (sscanf(buf, format, str->str) == 1)
             /*nothing*/;
     }
     return WAIT;
@@ -868,6 +882,15 @@ bool MDMParser::init(DevStatus* status)
 {
     LOCK();
     MDM_INFO("\r\n[ Modem::init ] = = = = = = = = = = = = = = =");
+
+    // Define all cstringhelpers up here, because "goto"s do not like bypassing inits
+    CStringHelper str_imei(_dev.imei, sizeof(_dev.imei));
+    CStringHelper str_manu(_dev.manu, sizeof(_dev.manu));
+    CStringHelper str_ver(_dev.ver, sizeof(_dev.ver));
+    CStringHelper str_imsi(_dev.imsi, sizeof(_dev.imsi));
+    CStringHelper str_verExt(_verExtended, sizeof(_verExtended));
+    CStringHelper str_ccid(_dev.ccid, sizeof(_dev.ccid));
+
     if (_dev.dev == DEV_SARA_R410) {
         // TODO: Without this delay, some commands, such as +CIMI, may return a SIM failure error.
         // This probably has something to do with the SIM initialization. Should we check the SIM
@@ -876,7 +899,7 @@ bool MDMParser::init(DevStatus* status)
     }
     // Returns the product serial number, IMEI (International Mobile Equipment Identity)
     sendFormated("AT+CGSN\r\n");
-    if (RESP_OK != waitFinalResp(_cbString, _dev.imei))
+    if (RESP_OK != waitFinalResp(_cbString, &str_imei))
         goto failure;
 
     if (_dev.sim != SIM_READY) {
@@ -886,11 +909,11 @@ bool MDMParser::init(DevStatus* status)
     }
     // get the manufacturer
     sendFormated("AT+CGMI\r\n");
-    if (RESP_OK != waitFinalResp(_cbString, _dev.manu))
+    if (RESP_OK != waitFinalResp(_cbString, &str_manu))
         goto failure;
     // get the version
     sendFormated("AT+CGMR\r\n");
-    if (RESP_OK != waitFinalResp(_cbString, _dev.ver))
+    if (RESP_OK != waitFinalResp(_cbString, &str_ver))
         goto failure;
     // ATI9 (get version and app version)
     // example output
@@ -901,7 +924,7 @@ bool MDMParser::init(DevStatus* status)
     // 28 "\r\nL0.0.00.00.05.08,A.02.04\r\n" (maintenance)
     memset(_verExtended, 0, sizeof(_verExtended));
     sendFormated("ATI9\r\n");
-    if (RESP_OK != waitFinalResp(_cbString, _verExtended))
+    if (RESP_OK != waitFinalResp(_cbString, &str_verExt))
         goto failure;
     // Test for Memory Issue version
     _memoryIssuePresent = false;
@@ -912,7 +935,7 @@ bool MDMParser::init(DevStatus* status)
     // Returns the ICCID (Integrated Circuit Card ID) of the SIM-card.
     // ICCID is a serial number identifying the SIM.
     sendFormated("AT+CCID\r\n");
-    if (RESP_OK != waitFinalResp(_cbCCID, _dev.ccid))
+    if (RESP_OK != waitFinalResp(_cbCCID, &str_ccid))
         goto failure;
     // Setup SMS in text mode
     sendFormated("AT+CMGF=1\r\n");
@@ -924,7 +947,7 @@ bool MDMParser::init(DevStatus* status)
         goto failure;
     // Request IMSI (International Mobile Subscriber Identification)
     sendFormated("AT+CIMI\r\n");
-    if (RESP_OK != waitFinalResp(_cbString, _dev.imsi))
+    if (RESP_OK != waitFinalResp(_cbString, &str_imsi))
         goto failure;
     // Reformat the operator string to be numeric
     // (allows the capture of `mcc` and `mnc`)
@@ -964,6 +987,12 @@ bool MDMParser::init(DevStatus* status)
             sendFormated("AT+UMNOPROF=%d\r\n", UBLOX_SARA_UMNOPROF_SIM_SELECT);
             waitFinalResp(); // Not checking for error since we will reset either way
             goto reset_failure;
+        }
+
+        // For signal strength RSRP/RSRQ values on R410M
+        sendFormated("AT+UCGED=5\r\n");
+        if (RESP_OK != waitFinalResp(nullptr, nullptr, UCGED_TIMEOUT)) {
+            goto failure;
         }
         // Force Power Saving mode to be disabled
         //
@@ -1192,7 +1221,7 @@ int MDMParser::_cbCPIN(int type, const char* buf, int len, Sim* sim)
     if (sim) {
         if (type == TYPE_PLUS){
             char s[16];
-            if (sscanf(buf, "\r\n+CPIN: %[^\r]\r\n", s) >= 1)
+            if (sscanf(buf, "\r\n+CPIN: %15[^\r]\r\n", s) >= 1)
                 *sim = (0 == strcmp("READY", s)) ? SIM_READY : SIM_PIN;
         } else if (type == TYPE_ERROR) {
             if (strstr(buf, "+CME ERROR: SIM not inserted"))
@@ -1202,10 +1231,12 @@ int MDMParser::_cbCPIN(int type, const char* buf, int len, Sim* sim)
     return WAIT;
 }
 
-int MDMParser::_cbCCID(int type, const char* buf, int len, char* ccid)
+int MDMParser::_cbCCID(int type, const char* buf, int len, CStringHelper* str)
 {
-    if ((type == TYPE_PLUS) && ccid) {
-        if (sscanf(buf, "\r\n+CCID: %[^\r]\r\n", ccid) == 1) {
+    if (str && str->str && (str->size > 1) && (type == TYPE_PLUS)) {
+        char format[32] = {};
+        snprintf(format, sizeof(format), "\r\n+CCID: %%%u[^\r]\r\n", str->size-1);
+        if (sscanf(buf, format, str->str) == 1) {
             //MDM_PRINTF("Got CCID: %s\r\n", ccid);
         }
     }
@@ -1241,7 +1272,7 @@ int MDMParser::_cbURAT(int type, const char *buf, int len, bool *matched_default
     return WAIT;
 }
 
-bool MDMParser::registerNet(const char* apn, NetStatus* status /*= NULL*/, system_tick_t timeout_ms /*= 180000*/)
+bool MDMParser::registerNet(const char* apn, NetStatus* status, system_tick_t timeout_ms)
 {
     LOCK();
     if (_init && _pwr && _dev.dev != DEV_UNKNOWN) {
@@ -1395,11 +1426,29 @@ bool MDMParser::checkNetStatus(NetStatus* status /*= NULL*/)
         if (RESP_OK != waitFinalResp(_cbCOPS, &_net, COPS_TIMEOUT)) {
             goto failure;
         }
-        // get the signal strength indication
-        sendFormated("AT+CSQ\r\n");
-        if (RESP_OK != waitFinalResp(_cbCSQ, &_net, CSQ_TIMEOUT)) {
-            goto failure;
+        // AT command used to collect signal stregnth is different for R410M radio
+        if (_dev.dev == DEV_SARA_R410) {
+            sendFormated("AT+UCGED=5\r\n");
+            if (RESP_OK != waitFinalResp(nullptr, nullptr, UCGED_TIMEOUT)) {
+                goto failure;
+            }
+
+            // Default to 255 because UCGED response is multi-line
+            _net.rsrp = 255;
+            _net.rsrq = 255;
+            sendFormated("AT+UCGED?\r\n");
+            if (RESP_OK != waitFinalResp(_cbUCGED, &_net, UCGED_TIMEOUT)) {
+                goto failure;
+            }
         }
+        else
+        {
+            sendFormated("AT+CSQ\r\n");
+            if (RESP_OK != waitFinalResp(_cbCSQ, &_net, CSQ_TIMEOUT)) {
+                goto failure;
+            }
+        }
+
         // +CREG, +CGREG, +COPS do not contain <AcT> for G350 devices.
         // Force _net.act to ACT_GSM to ensure Device Diagnostics and
         // RSSI() API's have a RAT for conversion lookup purposes.
@@ -1458,10 +1507,35 @@ bool MDMParser::getSignalStrength(NetStatus &status)
             _net.act = ACT_GSM;
         }
 
-        sendFormated("AT+CSQ\r\n");
-        if (RESP_OK == waitFinalResp(_cbCSQ, &_net, CSQ_TIMEOUT)) {
-            ok = true;
-            status = _net;
+        // R410M modems report AcT as LTE and LTE-M1 when connecting
+        // on LTE-M1. If AcT is reported as LTE, change it to report LTE-M1
+        if (_dev.dev == DEV_SARA_R410 && _net.act == ACT_LTE) {
+            _net.act = ACT_LTE_CAT_M1;
+        }
+
+        // AT command used to collect signal stregnth is different for R410M radio
+        if (_dev.dev == DEV_SARA_R410) {
+            sendFormated("AT+UCGED=5\r\n");
+            if (RESP_OK != waitFinalResp(nullptr, nullptr, UCGED_TIMEOUT)) {
+                goto cleanup;
+            }
+
+            // Default to 255 because UCGED response is multi-line
+            _net.rsrp = 255;
+            _net.rsrq = 255;
+            sendFormated("AT+UCGED?\r\n");
+            if (RESP_OK == waitFinalResp(_cbUCGED, &_net, UCGED_TIMEOUT)) {
+                ok = true;
+                status = _net;
+            }
+        }
+        else
+        {
+            sendFormated("AT+CSQ\r\n");
+            if (RESP_OK == waitFinalResp(_cbCSQ, &_net, CSQ_TIMEOUT)) {
+                ok = true;
+                status = _net;
+            }
         }
     }
 
@@ -1732,15 +1806,82 @@ int MDMParser::_cbCNUM(int type, const char* buf, int len, char* num)
     return WAIT;
 }
 
+int MDMParser::_cbUCGED(int type, const char* buf, int len, NetStatus* status)
+{
+    const int min_rsrq_mul_by_100 = -1950;
+    const int max_rsrq_mul_by_100 = -300;
+
+    if ((type == TYPE_PLUS || type == TYPE_UNKNOWN) && status) {
+        int rsrp;
+        int rsrq_n;
+        unsigned long rsrq_f;
+        // AT+UCGED?
+        // +RSRP: 314,5110,"-102.60",163,5110,"-097.90",173,5110,"-100.40",
+        // +RSRQ: 314,5110,"-19.60",163,5110,"-16.60",173,5110,"-18.60",
+
+        // RSRP maps from dBm [-141,-44] to [0,97]
+        // We are defining hard boundaries for RSRP to be between [-200,0],
+        // and consider other values as error and call it 255
+        if (sscanf(buf, "\r\n+RSRP: %*d,%*d,\"%d.%*u\"", &rsrp) == 1) {
+            if (rsrp < -141 && rsrp >= -200) {
+                status->rsrp = 0;
+            } else if (rsrp >= -44 && rsrp <=0) {
+                status->rsrp = 97;
+            } else if (rsrp >= -141 && rsrp < -44) {
+                status->rsrp = rsrp + 141;
+            } else {
+                status->rsrp = 255;
+            }
+
+            // Compatibility values for old API
+            if (status->rsrp != 255) {
+                // Simply remap from [0-97] to [0-63]
+                int compatStrn = (status->rsrp * 63) / 97;
+                // -113 to -50dBm
+                status->rssi = -113 + compatStrn;
+            } else {
+                status->rssi = 0;
+            }
+        }
+        // RSRQ maps from dBm [-20,-3] to [0,34]
+        // We are defining hard boundaries for RSRP to be between [],
+        // and consider other values as error and call it 255
+        if (sscanf(buf, "\r\n+RSRQ: %*d,%*d,\"%d.%lu\"", &rsrq_n, &rsrq_f) == 2) {
+            int rsrq_mul_100 = rsrq_n * 100 - rsrq_f;
+            if (rsrq_mul_100 < min_rsrq_mul_by_100 && rsrq_mul_100 >= -2000) {
+                status->rsrq = 0;
+            } else if (rsrq_mul_100 >= max_rsrq_mul_by_100 && rsrq_mul_100 <= 0) {
+                status->rsrq = 34;
+            } else if (rsrq_mul_100 >= min_rsrq_mul_by_100 && rsrq_mul_100 < max_rsrq_mul_by_100) {
+                status->rsrq = (rsrq_mul_100 + 2000)/50;
+            } else {
+                status->rsrq = 255;
+            }
+
+            // Compatibility values for old API
+            if (status->rsrq != 255) {
+                // Re-map from [0-34] to [0-7]. Table in UBX-13002752 - R62 (7.2.4)
+                int compatQual = (status->rsrq < 10) ? (status->rsrq / 5) : ((std::min(status->rsrq, 30) - 10) / 4) + 2;
+                // Just in case validate that we are not going to go out of bounds
+                if (compatQual >= 0 && compatQual <= 7) {
+                    status->qual = compatQualMap[compatQual];
+                }
+            } else {
+                status->qual = 0;
+            }
+        }
+    }
+    return WAIT;
+}
+
 int MDMParser::_cbCSQ(int type, const char* buf, int len, NetStatus* status)
 {
     if ((type == TYPE_PLUS) && status){
         int a,b;
-        char _qual[] = { 49, 43, 37, 25, 19, 13, 7, 0 }; // see 3GPP TS 45.008 [20] subclause 8.2.4
         // +CSQ: <rssi>,<qual>
         if (sscanf(buf, "\r\n+CSQ: %d,%d",&a,&b) == 2) {
             if (a != 99) status->rssi = -113 + 2*a;  // 0: -113 1: -111 ... 30: -53 dBm with 2 dBm steps
-            if ((b != 99) && (b < (int)sizeof(_qual))) status->qual = _qual[b];  //
+            if ((b != 99) && (b < (int)sizeof(compatQualMap))) status->qual = compatQualMap[b];  //
 
             switch (status->act) {
             case ACT_GSM:
@@ -1749,8 +1890,33 @@ int MDMParser::_cbCSQ(int type, const char* buf, int len, NetStatus* status)
                 status->rxqual = b;
                 break;
             case ACT_UTRAN:
-                status->rscp = (a != 99) ? (status->rssi + 116) : 255;
                 status->ecno = (b != 99) ? std::min((7 + (7 - b) * 6), 44) : 255;
+                if (status->ecno != 255) {
+                    // Convert to Ec/Io in dB * 100
+                    auto ecio100 = status->ecno * 50 - 2450;
+                    // RSCP = RSSI + Ec/Io
+                    // Based on Table 4: Mapping between <signal_power> reported from UE and the RSSI when the P-CPICH= -2 dB (UBX-13002752 - R65)
+                    if (a != 99) {
+                        auto rssi100 = -11250 + 500 * a / 2;
+                        auto rscp = (rssi100 + ecio100) / 100;
+                        // Convert from dBm [-121, -25] to RSCP_LEV number, see 3GPP TS 25.133 9.1.1.3
+                        if (rscp < -120) {
+                            rscp = 0;
+                        } else if (rscp >= -25) {
+                            rscp = 96;
+                        } else if (rscp >= -120 && rscp < -25) {
+                            rscp = rscp + 121;
+                        } else {
+                            rscp = 255;
+                        }
+                        status->rscp = rscp;
+                    } else {
+                        status->rscp = 255;
+                    }
+                } else {
+                    // Naively map to CESQ range (which is wrong)
+                    status->rscp = (a != 99) ? (3 + 2 * a) : 255;
+                }
                 break;
             case ACT_LTE:
             case ACT_LTE_CAT_M1:
@@ -1988,11 +2154,13 @@ failure:
     return NOIP;
 }
 
-int MDMParser::_cbUDOPN(int type, const char* buf, int len, char* mccmnc)
+int MDMParser::_cbUDOPN(int type, const char* buf, int len, CStringHelper* str)
 {
-    if ((type == TYPE_PLUS) && mccmnc) {
-        if (sscanf(buf, "\r\n+UDOPN: 0,\"%[^\"]\"", mccmnc) == 1)
-            ;
+    if (str && str->str && (str->size > 1) && (type == TYPE_PLUS)) {
+        char format[32] = {};
+        snprintf(format, sizeof(format), "\r\n+UDOPN: 0,\"%%%u[^\"]\"", str->size - 1);
+        if (sscanf(buf, format, str->str) == 1)
+            /*nothing*/;
     }
     return WAIT;
 }
@@ -3041,6 +3209,7 @@ bool MDMParser::smsRead(int ix, char* num, char* buf, int len)
     param.num = num;
     param.buf = buf;
     sendFormated("AT+CMGR=%d\r\n",ix);
+    // FIXME: check for SMS buffer size when smsRead() is being used
     ok = (RESP_OK == waitFinalResp(_cbCMGR, &param));
     UNLOCK();
     return ok;
@@ -3061,6 +3230,7 @@ int MDMParser::_cbCUSD(int type, const char* buf, int len, char* resp)
 
 bool MDMParser::ussdCommand(const char* cmd, char* buf)
 {
+    // FIXME: check for buffer size to prevent buffer overrun
     bool ok = false;
     LOCK();
     *buf = '\0';
@@ -3123,7 +3293,7 @@ int MDMParser::_cbURDFILE(int type, const char* buf, int len, URDFILEparam* para
     if ((type == TYPE_PLUS) && param && param->filename && param->buf) {
         char filename[48];
         int sz;
-        if ((sscanf(buf, "\r\n+URDFILE: \"%[^\"]\",%d,", filename, &sz) == 2) &&
+        if ((sscanf(buf, "\r\n+URDFILE: \"%47[^\"]\",%d,", filename, &sz) == 2) &&
             (0 == strcmp(param->filename, filename)) &&
             (buf[len-sz-2] == '\"') && (buf[len-1] == '\"')) {
             param->len = (sz < param->sz) ? sz : param->sz;

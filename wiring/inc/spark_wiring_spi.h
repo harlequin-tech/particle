@@ -135,6 +135,8 @@ private:
 };
 }
 
+// NOTE: when modifying this class (method signatures, adding/removing methods)
+// make sure to update spark_wiring_spi_proxy.h and wiring/api SPI tests to reflect these changes.
 class SPIClass {
 private:
   HAL_SPI_Interface _spi;
@@ -153,12 +155,16 @@ private:
    *
    * Enables Gen2 platforms to synchronize access to the SPI peripheral
    */
-  Mutex _mutex;
+  RecursiveMutex _mutex;
 #endif
 
 public:
   SPIClass(HAL_SPI_Interface spi);
-  virtual ~SPIClass() {};
+  ~SPIClass() = default;
+
+  // Prevent copying
+  SPIClass(const SPIClass&) = delete;
+  SPIClass& operator=(const SPIClass&) = delete;
 
   void begin();
   void begin(uint16_t);
@@ -262,33 +268,42 @@ public:
 
 #ifndef SPARK_WIRING_NO_SPI
 
+#include "spark_wiring_spi_proxy.h"
+
 namespace particle {
 namespace globals {
 
-SPIClass& instanceSpi();
-#define SPI ::particle::globals::instanceSpi()
+extern ::particle::SpiProxy<HAL_SPI_INTERFACE1> SPI;
 
 #if Wiring_SPI1
 #ifdef SPI1
 #undef SPI1
-#endif  // SPI1
+#endif // SPI1
 
-SPIClass& instanceSpi1();
-#define SPI1 ::particle::globals::instanceSpi1()
+extern ::particle::SpiProxy<HAL_SPI_INTERFACE2> SPI1;
 
 #endif // Wiring_SPI1
 
 #if Wiring_SPI2
 #ifdef SPI2
 #undef SPI2
-#endif  // SPI2
+#endif // SPI2
 
-SPIClass& instanceSpi2();
-#define SPI2 ::particle::globals::instanceSpi2()
+extern ::particle::SpiProxy<HAL_SPI_INTERFACE3> SPI2;
 
 #endif // Wiring_SPI2
 
 } } // particle::globals
+
+using particle::globals::SPI;
+
+#if Wiring_SPI1
+using particle::globals::SPI1;
+#endif // Wiring_SPI1
+
+#if Wiring_SPI2
+using particle::globals::SPI2;
+#endif // Wiring_SPI1
 
 #endif  // SPARK_WIRING_NO_SPI
 

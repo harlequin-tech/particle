@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Particle Industries, Inc.  All rights reserved.
+ * Copyright (c) 2020 Particle Industries, Inc.  All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -8,26 +8,22 @@
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * MERCHAN'TABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "feature_flags.h"
 
-#include "system_control.h"
-
-namespace particle {
-namespace control {
-namespace wifi {
-
-int handleGetAntennaRequest(ctrl_request* req);
-int handleSetAntennaRequest(ctrl_request* req);
-int handleScanRequest(ctrl_request* req);
-int handleGetCredentialsRequest(ctrl_request* req);
-int handleSetCredentialsRequest(ctrl_request* req);
-int handleClearCredentialsRequest(ctrl_request* req);
-
-} } } /* namespace particle::control::wifi */
+bool feature_is_enabled(Feature_Flag flag) {
+    uint32_t flags = 0;
+    if (dct_read_app_data_copy(DCT_FEATURE_FLAGS_OFFSET, &flags, sizeof(flags))) {
+        return false;
+    } else {
+        // NOTE: inverted logic!
+        return (flags & flag) ? false : true;
+    }
+    return false;
+}

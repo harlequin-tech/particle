@@ -385,7 +385,7 @@ void sys_unlock_tcpip_core(void);
  *  unresolved address by other network layers. Defaults to 3, 0 means disabled.
  *  Old packets are dropped, new packets are queued.
  */
-#define ARP_QUEUE_LEN                   3
+#define ARP_QUEUE_LEN                   6
 
 /**
  * ETHARP_SUPPORT_VLAN==1: support receiving and sending ethernet packets with
@@ -1332,6 +1332,7 @@ void sys_unlock_tcpip_core(void);
  * re implement read/write/close/ioctl/fnctl to send the requested action to the right
  * library (sharing select will need more work though).
  */
+// FIXME: increasing requires some additional work to handle select()
 #define LWIP_SOCKET_OFFSET              0
 
 /**

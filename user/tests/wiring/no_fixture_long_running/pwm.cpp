@@ -2,6 +2,7 @@
 #include "unit-test/unit-test.h"
 #include "pwm_hal.h"
 #include <cmath>
+#include "scope_guard.h"
 
 #ifdef ABS
 #undef ABS
@@ -20,10 +21,12 @@ uint8_t pwm_pins[] = {
         D0, D1, D2, D3, A4, A5, WKP, RX, TX, B0, B1, B2, B3, C4, C5
 #elif (PLATFORM_ID == PLATFORM_ASOM) || (PLATFORM_ID == PLATFORM_BSOM) || (PLATFORM_ID == PLATFORM_B5SOM)
         D4, D5, D6, D7, A0, A1, A7 /* , RGBR, RGBG, RGBB */
-# if PLATFORM_ID != PLATFORM_BSOM || (PLATFORM_ID == PLATFORM_B5SOM) || !HAL_PLATFORM_POWER_MANAGEMENT
+# if (PLATFORM_ID != PLATFORM_BSOM && PLATFORM_ID != PLATFORM_B5SOM) || !HAL_PLATFORM_POWER_MANAGEMENT
         ,
         A6
 # endif // PLATFORM_ID != PLATFORM_BSOM || !HAL_PLATFORM_POWER_MANAGEMENT
+#elif (PLATFORM_ID == PLATFORM_TRACKER)
+        D0, D1, D2, D3, D4, D5, D6, D7 /* , RGBR, RGBG, RGBB */
 #elif (PLATFORM_ID == PLATFORM_ARGON) || (PLATFORM_ID == PLATFORM_BORON) || (PLATFORM_ID == PLATFORM_XENON)
         D2, D3, D4, D5, D6, /* D7, */ D8, A0, A1, A2, A3, A4, A5 /* , RGBR, RGBG, RGBB */
 #else
@@ -45,6 +48,34 @@ template <typename F> void for_all_pwm_pins(F callback)
 test(PWM_00_P1S6SetupForP1) {
     // disable POWERSAVE_CLOCK on P1S6
     System.disableFeature(FEATURE_WIFI_POWERSAVE_CLOCK);
+
+    pinMode(P1S6, OUTPUT);
+    digitalWrite(P1S6, HIGH);
+
+    // https://github.com/particle-iot/device-os/issues/1763
+    // Make sure that WICED wifi stack deactivations/reactivations
+    // keep the 32khz clock setting and the pin is not oscillating.
+    SCOPE_GUARD({
+        WiFi.disconnect();
+        WiFi.off();
+    });
+    WiFi.on();
+    WiFi.connect();
+    waitFor(WiFi.ready, 30000);
+    assertTrue(WiFi.ready());
+
+    // Simple test that its state has not been changed
+    assertEqual(digitalRead(P1S6), (int)HIGH);
+
+    // Otherwise try to calculate pulse width
+    uint32_t avgPulseLow = 0;
+    const int iters = 3;
+    for(int i = 0; i < iters; i++) {
+        avgPulseLow += pulseIn(P1S6, LOW);
+    }
+    avgPulseLow /= iters;
+    // avgPulseLow should not be around 32KHz (31.25us +- 10%)
+    assertEqual(avgPulseLow, 0);
 }
 #endif
 
@@ -59,7 +90,13 @@ test(PWM_01_NoAnalogWriteWhenPinModeIsNotSetToOutput) {
 
 test(PWM_02_NoAnalogWriteWhenPinSelectedIsNotTimerChannel) {
 #if HAL_PLATFORM_NRF52840
+#if PLATFORM_ID != PLATFORM_TRACKER
     pin_t pin = D0;  //pin under test, D0 is not a Timer channel
+#else
+    // There are no non-PWM pins that we can safely use
+    pin_t pin = PIN_INVALID;
+    skip();
+#endif
 #else
     pin_t pin = D5;  //pin under test, D5 is not a Timer channel
 #endif
@@ -73,7 +110,7 @@ test(PWM_02_NoAnalogWriteWhenPinSelectedIsNotTimerChannel) {
 }
 
 test(PWM_03_NoAnalogWriteWhenPinSelectedIsOutOfRange) {
-    pin_t pin = 51; // pin under test (not a valid user pin)
+    pin_t pin = TOTAL_PINS; // pin under test (not a valid user pin)
     // when
     pinMode(pin, OUTPUT); // will simply return
     analogWrite(pin, 100); // will simply return
@@ -159,7 +196,6 @@ test(PWM_05_AnalogWriteOnPinResultsInCorrectAnalogValue) {
 
 test(PWM_06_AnalogWriteWithFrequencyOnPinResultsInCorrectFrequency) {
 	for_all_pwm_pins([](uint16_t pin) {
-
 	// when
     pinMode(pin, OUTPUT);
 
