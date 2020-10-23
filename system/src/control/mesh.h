@@ -31,6 +31,7 @@ int removeJoinerX(const char *eui64);
 int prepareJoinerX(uint32_t pan_id, const char *networkId, size_t networkIdSize);
 int joinNetworkX(uint32_t timeout);
 int getNetworkId(char *networkId, size_t networkIdSize);
+uint16_t getPanId(void);
 const char *getEui64Str(void);
 const char *getJoinPwd(void);
 

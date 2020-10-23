@@ -532,10 +532,42 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
 	break;
 	case 'p': {	// prep to join	network
 	    char networkId[24 + 1] = "5dec24ab58fa4e00012e7b7e";
+	    print("Network Ids: earthship 5dec24ab58fa4e00012e7b7e\n\r");
+	    uint16_t panId = 0x7256; // 0248d
+	    char panIdStr[4+1] = "248d";
+            print("Network Id: [");
+	    print(networkId);
+	    print("] ");
+            read_line(networkId, sizeof(networkId)-1);
+	    if (networkId[0] == 0) {
+		networkId[0] = '5';
+	    }
+	    if (strlen(networkId) != 24) {
+		print("cancelled\n\r");
+		break;
+	    }
+	    print("Pan Ids: earthship 248d, config 7256\n\r");
+            print("Pan Id: [0x248d] 0x");
+            read_line(panIdStr, sizeof(panIdStr)-1);
+	    if (panIdStr[0] == 0) {
+		panIdStr[0] = '2';
+	    }
+	    if (strlen(panIdStr) != 4) {
+		print("cancelled\n\r");
+		break;
+	    }
+	    char *endp;
+	    panId = strtol(panIdStr, &endp, 16);
+	    if (*endp != '\0') {
+		print("cancelled\n\r");
+		break;
+	    }
 	    //particle::ctrl::mesh::getNetworkId(networkId, sizeof(networkId));
-	    int res = particle::ctrl::mesh::prepareJoinerX(0x248d, networkId, sizeof(networkId)-1);
+	    int res = particle::ctrl::mesh::prepareJoinerX(panId, networkId, sizeof(networkId)-1);
 	    char buf[32];
-	    print("prepareJoinerX(0x248d, \"");
+	    print("prepareJoinerX(0x");
+	    print(panIdStr);
+	    print(", \"");
 	    print(networkId);
 	    print(") res = ");
 	    snprintf(buf, sizeof(buf), "%i", res);
@@ -716,6 +748,11 @@ template<typename Config> void SystemSetupConsole<Config>::handle(char c)
 		print(networkId);
 		print("\"\r\n");
 	    }
+
+	    uint16_t panId = particle::ctrl::mesh::getPanId();
+	    snprintf(buf, sizeof(buf), "Pan Id: %04x\r\n", panId);
+	    print(buf);
+
 	    res = particle::control::config::isDeviceSetupDoneX();
 	    print("isDeviceSetupDoneX() =  ");
 	    snprintf(buf, sizeof(buf), "%i", res);

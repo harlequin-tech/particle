@@ -659,6 +659,17 @@ int getNetworkId(char *networkId, size_t networkIdSize)
     return ot_get_network_id(thread, networkId, &networkIdSize);
 }
 
+uint16_t getPanId(void)
+{
+    const auto thread = threadInstance();
+    if (!thread) {
+	return SYSTEM_ERROR_INVALID_STATE;
+    }
+
+    return otLinkGetPanId(thread);
+}
+
+
 int prepareJoinerX(uint32_t pan_id, const char *networkId, size_t networkIdSize)
 {
     THREAD_LOCK(lock);
