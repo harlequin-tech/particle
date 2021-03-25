@@ -89,6 +89,12 @@ void TCPServer::stop()
     _sock = socket_handle_invalid();
 }
 
+bool TCPServer::start(uint16_t port)
+{
+    _port = port;
+    return begin();
+}
+
 TCPClient TCPServer::available()
 {
     sock_handle_t SOCKET_INVALID = socket_handle_invalid();

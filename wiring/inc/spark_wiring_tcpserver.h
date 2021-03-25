@@ -49,6 +49,7 @@ public:
     virtual size_t write(uint8_t, system_tick_t timeout);
     virtual size_t write(const uint8_t *buf, size_t size, system_tick_t timeout);
     void stop();
+    bool start(uint16_t port);
     using Print::write;
 };
 
