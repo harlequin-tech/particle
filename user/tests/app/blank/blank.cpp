@@ -61,7 +61,9 @@ void setup() {
 
     delay(5s);
 
-    burnNcpId(QUECTEL_EG800Q_EU);
+    // UNCOMMENT THE CORRECT ONE!
+    // burnNcpId(QUECTEL_EG800Q_EU);
+    // burnNcpId(QUECTEL_EG800Q_NA);
 
     Cellular.on();
     delay(5s);
