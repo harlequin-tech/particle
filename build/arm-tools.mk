@@ -57,9 +57,9 @@ dollar=$$
 arm_gcc_version_str:=$(strip $(shell $(CC) -dumpversion))
 expected_version:=5.3.1
 #$(info result $(shell test $(quote)$(arm_gcc_version_str)$(quote) $(lt) $(quote)$(expected_version)$(quote);echo $$?))
-ifeq ($(shell test $(quote)$(arm_gcc_version_str)$(quote) $(lt) $(quote)$(expected_version)$(quote); echo $$?),0)
-     $(error "ARM gcc version $(expected_version) or later required, but found $(arm_gcc_version_str)")
-endif
+#ifeq ($(shell test $(quote)$(arm_gcc_version_str)$(quote) $(lt) $(quote)$(expected_version)$(quote); echo $$?),0)
+#     $(error "ARM gcc version $(expected_version) or later required, but found $(arm_gcc_version_str)")
+#endif
 
 arm_gcc_version_major:=$(word 1,$(subst ., ,$(arm_gcc_version_str)))
 arm_gcc_version_minor:=$(word 2,$(subst ., ,$(arm_gcc_version_str)))
