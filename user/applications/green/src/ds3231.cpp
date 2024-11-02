@@ -16,6 +16,10 @@ void DS3231::reset(void)
     disableAlarm();
 }
 
+bool DS3231::ready(void)
+{
+    return _i2c.read(DS_REG_CURRENT_SECOND) != 0xFF;
+}
 
 DateTime DS3231::now() 
 {

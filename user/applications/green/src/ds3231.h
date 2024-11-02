@@ -16,6 +16,9 @@
 class DS3231 {
     public:
         DS3231(I2C &i2c) : _i2c(i2c) {};
+
+
+        bool ready(void);
         void reset(void);
         bool exists(void);
         void dump(void);

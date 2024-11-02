@@ -29,6 +29,7 @@ class RTC {
         RTC(void);
         int init(rtcType_e rtcType, uint8_t i2cAddr);
 
+        bool ready(void);               // RTC is ready and responding on I2C
         int reset(void);
         void set(DateTime& dt);
         DateTime now();

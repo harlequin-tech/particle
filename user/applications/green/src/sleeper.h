@@ -21,7 +21,7 @@ class Sleeper {
         static void wakeup(void);
 
 	RTC rtc;
-        int enableRTC(void);
+        int init(void);         // reset and setup RTC chip
         // bool rtcSecondsIs(uint8_t seconds);
         void printTimestamp(DateTime now);
         void printTimestamp(void);

@@ -24,22 +24,27 @@ void PCF8523::reset(void)
     clearAll();
 }
 
+bool PCF8523::ready(void)
+{
+    return _i2c.read(PCF_REG_SECONDS) != 0xFF;
+}
+
 void PCF8523::dump(void)
 {
     uint8_t data[19];
     _i2c.read(0, sizeof(data), data);
-    Serial.println();
-    Serial.printlnf("PCF8523 i2c addr: 0x%02x", _i2c.getAddr());
-    Serial.println("PCF8523 register contents");
+    Serial1.println();
+    Serial1.printlnf("PCF8523 i2c addr: 0x%02x", _i2c.getAddr());
+    Serial1.println("PCF8523 register contents");
     for (uint8_t ind=0; ind<sizeof(data); ind++) {
-        Serial.printlnf("%02x: %02x", ind, data[ind]);
+        Serial1.printlnf("%02x: %02x", ind, data[ind]);
     }
 }
 
 
 void PCF8523::setAlarm(int8_t minute, int8_t hour, int8_t day, int8_t dayOfWeek) 
 {
-    Serial.printlnf("PCF8523:setAlarm(min=%d, hour=%d, day=%d, dayOfWeek=%d)",
+    Serial1.printlnf("PCF8523:setAlarm(min=%d, hour=%d, day=%d, dayOfWeek=%d)",
             minute, hour, day, dayOfWeek);
     _raw.setting.minute    = minute < 0    ? PCF_ALARM_DISABLE : DEC_TO_BCD(minute);
     _raw.setting.hour      = hour < 0      ? PCF_ALARM_DISABLE : DEC_TO_BCD(hour);
@@ -101,13 +106,13 @@ void PCF8523::disableAlarmInterrupt(uint8_t alarmId)
 
 int PCF8523::enableAlarm(uint8_t alarmId)
 {
-    Serial.printlnf("enable: alarmId %u", _alarmId);
+    Serial1.printlnf("enable: alarmId %u", _alarmId);
     if (_alarmId > PCF_ALARM_MAX) return -1;
 
     uint8_t startReg = PCF_REG_MINUTE_ALARM;
 
     for (uint8_t ind=0; ind<sizeof(_raw.data); ind++) {
-        Serial.printlnf("    %u: 0x%02x", startReg + ind, _raw.data[ind]);
+        Serial1.printlnf("    %u: 0x%02x", startReg + ind, _raw.data[ind]);
     }
 
     // start from 1 as seconds is not used on PCF
@@ -181,10 +186,10 @@ void PCF8523::set(DateTime& dt)
        DEC_TO_BCD(dt.year()-2000) };
 
 
-    Serial.printlnf("PCF8523::set(%s)", dt.str(buf, sizeof(buf)));
+    Serial1.printlnf("PCF8523::set(%s)", dt.str(buf, sizeof(buf)));
 
     for (uint8_t ind=0; ind<sizeof(data); ind++) {
-        Serial.printlnf("  %02u: 0x%02x", PCF_REG_SECONDS + ind, data[ind]);
+        Serial1.printlnf("  %02u: 0x%02x", PCF_REG_SECONDS + ind, data[ind]);
     }
     
     _i2c.write(PCF_REG_SECONDS, sizeof(data), data);

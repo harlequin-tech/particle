@@ -21,6 +21,7 @@ class PCF8523 {
         void     set(DateTime& dt);
         DateTime now();
 
+        bool ready(void);
         void reset(void);
         void clearAll(void);
         void dump(void);

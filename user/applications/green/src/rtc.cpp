@@ -55,12 +55,12 @@ void RtcAlarm::set(int8_t second, int8_t minute, int8_t hour, int8_t dayOfWeek, 
 	trigger = DS_TRIGGER_DAY | DS_TRIGGER_HOUR | DS_TRIGGER_MINUTE | DS_TRIGGER_SECOND;
     }
 
-    Serial.printlnf("set(s=%u, m=%u, h=%u, wd=%u, d=%u)", second, minute, hour, dayOfWeek, day);
-    Serial.printlnf("_raw(s=0x%02x, m=0x%02x, h=0x%02x, d=0x%02x)", 
+    Serial1.printlnf("set(s=%u, m=%u, h=%u, wd=%u, d=%u)", second, minute, hour, dayOfWeek, day);
+    Serial1.printlnf("_raw(s=0x%02x, m=0x%02x, h=0x%02x, d=0x%02x)", 
             _raw.data[0], _raw.data[1], _raw.data[2], _raw.data[3]);
 
     setTrigger(trigger);
-    Serial.printlnf("_trg(s=0x%02x, m=0x%02x, h=0x%02x, d=0x%02x)", 
+    Serial1.printlnf("_trg(s=0x%02x, m=0x%02x, h=0x%02x, d=0x%02x)", 
             _raw.data[0], _raw.data[1], _raw.data[2], _raw.data[3]);
 }
 
@@ -68,7 +68,7 @@ void RtcAlarm::enable(void)
 {
     uint8_t ind;
 
-    Serial.printlnf("enable: alarmId %u", _alarmId);
+    Serial1.printlnf("enable: alarmId %u", _alarmId);
     if (_alarmId > DS_ALARM_MAX) return;
 
     uint8_t startReg = (_alarmId == DS_ALARM_1) ?  DS_REG_A1_SECOND : DS_REG_A2_MINUTE;
@@ -81,7 +81,7 @@ void RtcAlarm::enable(void)
     }
 
     for (ind=0; ind<sizeof(_raw.data); ind++) {
-        Serial.printlnf("    %u: 0x%02x", startReg + ind, _raw.data[ind]);
+        Serial1.printlnf("    %u: 0x%02x", startReg + ind, _raw.data[ind]);
     }
 
     if (_alarmId == DS_ALARM_1) {
@@ -109,7 +109,7 @@ bool RtcAlarm::triggered(void)
 
 uint8_t RtcAlarm::clear(void)
 {
-    Serial.printlnf("RtcAlarm::clear() id %d -> 0x%x\n", _alarmId, _alarmEnable[_alarmId]);
+    Serial1.printlnf("RtcAlarm::clear() id %d -> 0x%x\n", _alarmId, _alarmEnable[_alarmId]);
     return _i2c.modify(DS_REG_STATUS, _alarmEnable[_alarmId], 0);
 }
 
@@ -153,6 +153,23 @@ void RTC::dump(void)
     }
 }
 
+bool RTC::ready(void)
+{
+    switch (_type) {
+    case RTC_DS3231:
+        return _ds.ready();
+        break;
+
+    case RTC_PCF8532:
+        return _pcf.ready();
+        break;
+
+    default:
+        return false;
+    }
+
+    return false;
+}
 
 int RTC::reset(void)
 {
@@ -241,7 +258,7 @@ int RTC::setCountdown(uint8_t alarmId, uint32_t seconds)
 
     char buf[64];
     char buf2[64];
-    Serial.printlnf("%s: setCountdown(): alarm set for %s\n",
+    Serial1.printlnf("%s: setCountdown(): alarm set for %s\n",
             now().str(buf2, sizeof buf2),
             dt.str(buf, sizeof buf ));
 
@@ -273,6 +290,8 @@ int RTC::clearAlarm(uint8_t alarmId)
 
 int RTC::enableAlarm(uint8_t alarmId)
 {
+    clearAlarm(alarmId);
+
     switch (_type) {
     case RTC_DS3231:
         return _ds.enableAlarm(alarmId);

@@ -14,11 +14,13 @@ Sleeper::Sleeper(rtcType_e rtcType, uint8_t i2cAddr, uint16_t wakePin, uint16_t 
     _wakePin = wakePin;
     _woken = false;
     rtc.init(rtcType, i2cAddr);
-    rtc.dump();
+    //rtc.dump();
 
     pinMode(_wakePin, INPUT_PULLUP);
     //pinMode(_wakePin, INPUT);
-    //attachInterrupt(_wakePin, wakeup, RISING);
+    attachInterrupt(_wakePin, wakeup, RISING);
+
+    _rtcEnabled = true;
 }
 
 
@@ -43,14 +45,10 @@ void Sleeper::printTimestamp(void)
 }
 
 
-int Sleeper::enableRTC(void) 
+int Sleeper::init(void) 
 {
     Serial.println("Initialising RTC.");
     rtc.reset();
-
-    _rtcEnabled = true;
-    digitalWrite(_ledPin, HIGH);
-
     printTimestamp();
     Serial.println();
 

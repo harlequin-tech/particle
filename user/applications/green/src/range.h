@@ -2,12 +2,13 @@
 #define RANGE_H_
 
 #define RANGE_SAMPLE_MAX 4
+#define RANGE_POWER_UP_TIME     250
 
 class Range {
     public:
-        void begin(const uint16_t triggerPin, const uint16_t echoPin, const uint16_t interruptPin);
+        void begin(const uint16_t triggerPin, const uint16_t echoPin, const uint16_t interruptPin, const uint16_t powerPin = 0);
         void publish(const char *channel, const char *value);
-        float loop(uint32_t now=0);
+        float loop(void);
         float getRange(void);
         int getRange(float *range);
         void trigger(void);
@@ -22,13 +23,23 @@ class Range {
         uint32_t getInterruptLow(void) { return _interruptLow; };
 
         void setTemperture(float temperature) { _temperature = temperature; }
-        bool idle(void) { return !(_timing || _pinging); }
+        bool idle(void) { return !(_timing || _pinging || _poweringUp); }
+        bool poweringUp(void) { return _poweringUp; }
 
+        int on(void);           // Turn power on
+        int off(void);          // Turn power off
+        bool isOn(void) { return _powerOn; }
     private:
+        uint16_t _powerPin;     // Pin controlling power for sensor.  0 = always on
         uint16_t _triggerPin;
         uint16_t _echoPin;
         uint16_t _interruptPin;
+        bool _powerOn = true;
+        bool _poweringUp = false;
+        bool _powerReady = false;
+        bool _pingPending = false;           // ping pending on power on
 
+        uint32_t _powerStart;                // ms timestamp when power was applied
         volatile uint32_t _pulseStart;
         volatile uint32_t _pulseDuration;
         float _temperature = 20;

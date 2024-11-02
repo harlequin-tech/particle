@@ -9,6 +9,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+//#define Serial Serial1
+
 /**
  * I2C
  */
