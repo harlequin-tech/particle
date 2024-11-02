@@ -52,7 +52,7 @@ struct hal_interrupts_suspend_data_t {
 static hal_interrupts_suspend_data_t s_suspend_data = {};
 
 extern char link_interrupt_vectors_location;
-extern char link_ram_interrupt_vectors_location;
+extern uint32_t link_ram_interrupt_vectors_location[];
 extern char link_ram_interrupt_vectors_location_end;
 
 static void gpiote_interrupt_handler(nrfx_gpiote_pin_t nrf_pin, nrf_gpiote_polarity_t action) {
@@ -264,7 +264,7 @@ int HAL_Set_Direct_Interrupt_Handler(IRQn_Type irqn, HAL_Direct_Interrupt_Handle
     }
 
     int32_t state = HAL_disable_irq();
-    volatile uint32_t* isrs = (volatile uint32_t*)&link_ram_interrupt_vectors_location;
+    volatile uint32_t* isrs = (volatile uint32_t*)link_ram_interrupt_vectors_location;
 
     if (handler == NULL && (flags & HAL_DIRECT_INTERRUPT_FLAG_RESTORE)) {
         // Restore

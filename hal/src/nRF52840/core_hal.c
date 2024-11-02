@@ -82,7 +82,8 @@ void app_error_handler_bare(uint32_t err);
 
 extern char link_heap_location, link_heap_location_end;
 extern char link_interrupt_vectors_location;
-extern char link_ram_interrupt_vectors_location;
+//extern char link_ram_interrupt_vectors_location;
+extern uint32_t link_ram_interrupt_vectors_location[];
 extern char link_ram_interrupt_vectors_location_end;
 extern char _Stack_Init;
 
@@ -215,8 +216,14 @@ void SysTickChain() {
  * the main loop runs.
  */
 void HAL_Core_Init_finalize(void) {
-    uint32_t* isrs = (uint32_t*)&link_ram_interrupt_vectors_location;
-    isrs[IRQN_TO_IDX(SysTick_IRQn)] = (uint32_t)SysTickChain;
+    //uint32_t* isrs = (uint32_t*)&link_ram_interrupt_vectors_location;
+    //*(isrs + IRQN_TO_IDX(SysTick_IRQn)) = (uint32_t)SysTickChain;      // XXX yes?
+                                                                       //
+    //uint32_t *isrs = (uint32_t [64])&link_ram_interrupt_vectors_location;
+    //isrs[IRQN_TO_IDX(SysTick_IRQn)] = (uint32_t)SysTickChain;      // XXX yes?
+                                                                   //
+    volatile uint32_t* isrs = (volatile uint32_t*)link_ram_interrupt_vectors_location;
+    isrs[IRQN_TO_IDX(SysTick_IRQn)] = (uint32_t)SysTickChain;;
 }
 
 void HAL_Core_Init(void) {
@@ -234,7 +241,7 @@ void HAL_Core_Config_systick_configuration(void) {
  * the interrupt table if required.
  */
 void HAL_Core_Setup_override_interrupts(void) {
-    uint32_t* isrs = (uint32_t*)&link_ram_interrupt_vectors_location;
+    uint32_t* isrs = (uint32_t*)link_ram_interrupt_vectors_location;
     /* Set MBR to forward interrupts to application */
     *((volatile uint32_t*)0x20000000) = (uint32_t)isrs;
     /* Reset SoftDevice vector address */
@@ -264,7 +271,7 @@ void HAL_Core_Restore_Interrupt(IRQn_Type irqn) {
         handler = (uint32_t)SysTickChain;
     }
 
-    volatile uint32_t* isrs = (volatile uint32_t*)&link_ram_interrupt_vectors_location;
+    volatile uint32_t* isrs = (volatile uint32_t*)link_ram_interrupt_vectors_location;
     isrs[IRQN_TO_IDX(irqn)] = handler;
 }
 
@@ -283,8 +290,8 @@ void HAL_Core_Config(void) {
 #endif
 
     /* Forward interrupts */
-    memcpy(&link_ram_interrupt_vectors_location, &link_interrupt_vectors_location, &link_ram_interrupt_vectors_location_end-&link_ram_interrupt_vectors_location);
-    uint32_t* isrs = (uint32_t*)&link_ram_interrupt_vectors_location;
+    memcpy(link_ram_interrupt_vectors_location, &link_interrupt_vectors_location, &link_ram_interrupt_vectors_location_end-(char *)link_ram_interrupt_vectors_location);
+    uint32_t* isrs = (uint32_t*)link_ram_interrupt_vectors_location;
     SCB->VTOR = (uint32_t)isrs;
 
     Set_System();
