@@ -308,7 +308,7 @@ void HAL_SPI_Begin_Ext(HAL_SPI_Interface spi, SPI_Mode mode, uint16_t pin, void*
             m_spi_map[spi].ss_pin = SS;
         } else if (spi == HAL_SPI_INTERFACE2) {
             m_spi_map[spi].ss_pin = D5;
-        } else {
+        } else if (spi < (sizeof(m_spi_map) / sizeof(m_spi_map[0]))) {
             m_spi_map[spi].ss_pin = PIN_INVALID;
         }
     } else {
@@ -495,9 +495,11 @@ int32_t HAL_SPI_Set_Settings(HAL_SPI_Interface spi, uint8_t set_default, uint8_t
         m_spi_map[spi].data_mode = DEFAULT_DATA_MODE;
         m_spi_map[spi].bit_order = DEFAULT_BIT_ORDER;
         m_spi_map[spi].clock = DEFAULT_SPI_CLOCK;
+        //m_spi_map[spi].clock = SPI_CLOCK_DIV8; 	// XXX debug
     } else {
         m_spi_map[spi].data_mode = mode;
         m_spi_map[spi].bit_order = order;
+        //m_spi_map[spi].clock = SPI_CLOCK_DIV8; 	// XXX debug
         m_spi_map[spi].clock = clockdiv;
     }
 
