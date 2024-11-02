@@ -54,6 +54,8 @@ ifneq (,$(LOG_MODULE_CATEGORY))
 CFLAGS += -DLOG_MODULE_CATEGORY="\"$(LOG_MODULE_CATEGORY)\""
 endif
 
+
+
 # Adds the sources from the specified library directories
 # v1 libraries include all sources
 LIBCPPSRC += $(call target_files_dirs,$(MODULE_LIBSV1),,*.cpp)
@@ -63,6 +65,11 @@ LIBCSRC += $(call target_files_dirs,$(MODULE_LIBSV1),,*.c)
 LIBCPPSRC += $(call target_files_dirs,$(MODULE_LIBSV2)/,src/,*.cpp)
 LIBCSRC += $(call target_files_dirs,$(MODULE_LIBSV2)/,src/,*.c)
 
+$(info MODULE_PATH $(MODULE_PATH))
+$(info MODULE_LIBSV1 $(MODULE_LIBSV1))
+$(info MODULE_LIBSV2 $(MODULE_LIBSV2))
+$(info LIBCPPSRC $(LIBCPPSRC))
+$(info LIBCSRC $(LIBCSRC))
 
 CPPSRC += $(LIBCPPSRC)
 CSRC += $(LIBCSRC)
@@ -72,9 +79,18 @@ INCLUDE_DIRS += $(MODULE_LIBSV1)
 
 # v2 libraries contain their sources under a "src" folder
 INCLUDE_DIRS += $(addsuffix /src,$(MODULE_LIBSV2))
+INCLUDE_LIBS = $(addsuffix /src,$(MODULE_LIBSV2))
 
-# $(info cppsrc $(CPPSRC))
-# $(info csrc $(CSRC))
+$(info LIBCPPSRC $(LIBCPPSRC))
+$(info LIBCSRC $(LIBCSRC))
+$(info CPPSRC $(CPPSRC))
+$(info CSRC $(CSRC))
+$(info "XXX MODULE_LIBSV1" $(MODULE_LIBSV1))
+$(info "XXX MODULE_LIBSV2" $(MODULE_LIBSV2))
+$(info "XXX INCLUDE_LIBS" $(INCLUDE_LIBS))
+$(info "XXX LIBCPPSRC" $(LIBCPPSRC))
+$(info "XXX LIBCSRC" $(LIBCSRC))
+$(info INCLUDE_DIRS $(INCLUDE_DIRS))
 
 
 # Collect all object and dep files
@@ -82,7 +98,7 @@ ALLOBJ += $(addprefix $(BUILD_PATH)/, $(CSRC:.c=.o))
 ALLOBJ += $(addprefix $(BUILD_PATH)/, $(CPPSRC:.cpp=.o))
 ALLOBJ += $(addprefix $(BUILD_PATH)/, $(patsubst $(COMMON_BUILD)/arm/%,%,$(ASRC:.S=.o)))
 
-# $(info allobj $(ALLOBJ))
+ $(info allobj $(ALLOBJ))
 
 ALLDEPS += $(addprefix $(BUILD_PATH)/, $(CSRC:.c=.o.d))
 ALLDEPS += $(addprefix $(BUILD_PATH)/, $(CPPSRC:.cpp=.o.d))
